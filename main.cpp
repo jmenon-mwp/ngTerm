@@ -2,24 +2,6 @@
 #include <vte/vte.h> // Include the VTE header
 #include <glib.h>    // Include glib.h for G_OBJECT, GError, g_strsplit, g_strfreev, gboolean
 
-// Callback function for the "New" button
-void on_button_new_clicked() {
-    g_print("New button clicked!\n");
-    // Add your "New" functionality here
-}
-
-// Callback function for the "Save" button
-void on_button_save_clicked() {
-    g_print("Save button clicked!\n");
-    // Add your "Save" functionality here
-}
-
-// Callback function for the "Settings" button
-void on_button_settings_clicked() {
-    g_print("Settings button clicked!\n");
-    // Add your "Settings" functionality here
-}
-
 // Define a Column Record to hold the data for the TreeView
 class ConnectionColumns : public Gtk::TreeModel::ColumnRecord {
 public:
@@ -31,40 +13,16 @@ public:
 
 int main(int argc, char* argv[]) { // function parameter argv
     // Initialize the GTK+ application
-    auto app = Gtk::Application::create(argc, argv, "org.yourdomain.cpterm"); // Use the application ID
+    auto app = Gtk::Application::create(argc, argv, "org.yourdomain.ngterm"); // Use the application ID
 
     // Create the main window
     Gtk::Window window;
-    window.set_title("cpTerm"); // Set the window title
+    window.set_title("ngTerm"); // Set the window title
     window.set_default_size(800, 600); // Set a default size
 
     // Create a vertical box to hold the toolbar and the main content
     Gtk::VBox main_vbox;
     window.add(main_vbox); // Add the main_vbox to the window
-
-    // Create the toolbar
-    Gtk::Toolbar toolbar;
-    main_vbox.pack_start(toolbar, false, false, 0); // Pack toolbar at the top, not expanding
-
-    // Add buttons to the toolbar
-    Gtk::ToolButton button_new;
-    button_new.set_label("New");
-    // You can set stock icons or load custom images here
-    // button_new.set_icon_name("document-new");
-    toolbar.append(button_new);
-    button_new.signal_clicked().connect(sigc::ptr_fun(&on_button_new_clicked));
-
-    Gtk::ToolButton button_save;
-    button_save.set_label("Save");
-    // button_save.set_icon_name("document-save");
-    toolbar.append(button_save);
-    button_save.signal_clicked().connect(sigc::ptr_fun(&on_button_save_clicked));
-
-    Gtk::ToolButton button_settings;
-    button_settings.set_label("Settings");
-    // button_settings.set_icon_name("preferences-system");
-    toolbar.append(button_settings);
-    button_settings.signal_clicked().connect(sigc::ptr_fun(&on_button_settings_clicked));
 
     // Create a horizontal paned widget for the left and right frames
     Gtk::HPaned main_hpaned;
