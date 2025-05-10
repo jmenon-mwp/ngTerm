@@ -14,13 +14,13 @@ GTK_CFLAGS = $(shell pkg-config --cflags gtkmm-3.0 vte-2.91)
 GTK_LIBS = $(shell pkg-config --libs gtkmm-3.0 vte-2.91)
 
 # Define general CXXFLAGS
-# -std=c++11: Specify C++11 standard (common for modern GTKmm)
+# -std=c++17: Specify C++17 standard for filesystem support
 # -Wall: Enable all common warnings (good practice for development)
 # -Wno-deprecated-declarations: Suppress warnings about deprecated declarations
-CXXFLAGS = -std=c++11 -Wall -Wno-deprecated-declarations $(GTK_CFLAGS)
+CXXFLAGS = -std=c++17 -Wall -Wno-deprecated-declarations $(GTK_CFLAGS)
 
-# Define linker flags (can be empty if GTK_LIBS covers everything, as it often does)
-LDFLAGS =
+# Define linker flags to include filesystem library
+LDFLAGS = -lstdc++fs
 
 # Default target (builds the executable)
 all: $(TARGET)
