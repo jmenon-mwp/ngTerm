@@ -1,61 +1,72 @@
 #include "Connections.h"
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <random>
+#include <sstream>
 #include <algorithm>
+#include <nlohmann/json.hpp>
+
+std::filesystem::path ConnectionManager::get_connections_dir() {
+    const char* home_dir = std::getenv("HOME");
+    std::filesystem::path config_dir = std::filesystem::path(home_dir) / ".config" / "ngTerm" / "connections";
+    std::filesystem::create_directories(config_dir);
+    return config_dir;
+}
+
+std::filesystem::path ConnectionManager::get_connections_file() {
+    return get_connections_dir() / "connections.json";
+}
+
+std::filesystem::path ConnectionManager::get_folders_file() {
+    return get_connections_dir() / "folders.json";
+}
 
 std::string ConnectionManager::generate_connection_id() {
-    // Use current timestamp and random number for uniqueness
-    auto now = std::chrono::system_clock::now();
-    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now.time_since_epoch()
-    ).count();
-
-    // Generate a random number
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> dis(1000, 9999);
-    int random_num = dis(gen);
-
-    // Combine timestamp and random number
-    std::stringstream ss;
-    ss << std::hex << timestamp << "-" << std::setw(4) << std::setfill('0') << random_num;
-    return ss.str();
+    return "conn_" + std::to_string(dis(gen));
 }
 
-std::filesystem::path ConnectionManager::get_connections_directory() {
-    // Get the path to the user's home directory
-    const char* home_dir = std::getenv("HOME");
-    if (!home_dir) {
-        throw std::runtime_error("Could not find home directory");
-    }
-
-    // Construct the path to the connections directory
-    return std::filesystem::path(home_dir) / ".config" / "ngTerm" / "connections";
+std::string ConnectionManager::generate_folder_id() {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(1000, 9999);
+    return "folder_" + std::to_string(dis(gen));
 }
 
 bool ConnectionManager::save_connection(const ConnectionInfo& connection) {
     try {
-        // Ensure connections directory exists
-        std::filesystem::path connections_dir = get_connections_directory();
-        std::filesystem::create_directories(connections_dir);
+        std::vector<ConnectionInfo> connections = load_connections();
 
-        // Construct the filename using the connection ID
-        std::filesystem::path connection_file = connections_dir / (connection.id + ".json");
+        // Check if connection with same ID exists
+        auto it = std::find_if(connections.begin(), connections.end(),
+            [&connection](const ConnectionInfo& c) { return c.id == connection.id; });
 
-        // Create JSON object for the connection
-        json connection_json = {
-            {"id", connection.id},
-            {"name", connection.name},
-            {"host", connection.host},
-            {"port", connection.port},
-            {"username", connection.username}
-        };
+        if (it != connections.end()) {
+            // Replace existing connection
+            *it = connection;
+        } else {
+            // Add new connection
+            connections.push_back(connection);
+        }
 
-        // Write to file
-        std::ofstream file(connection_file);
-        file << std::setw(4) << connection_json << std::endl;
+        // Write back to file
+        json j_connections = json::array();
+        for (const auto& conn : connections) {
+            j_connections.push_back({
+                {"id", conn.id},
+                {"name", conn.name},
+                {"host", conn.host},
+                {"port", conn.port},
+                {"username", conn.username},
+                {"folder_id", conn.folder_id}
+            });
+        }
 
-        std::cout << "Saved connection: " << connection.name
-                  << " (ID: " << connection.id << ")" << std::endl;
+        std::ofstream file(get_connections_file());
+        file << j_connections.dump(4);
         return true;
     } catch (const std::exception& e) {
         std::cerr << "Error saving connection: " << e.what() << std::endl;
@@ -63,62 +74,150 @@ bool ConnectionManager::save_connection(const ConnectionInfo& connection) {
     }
 }
 
+bool ConnectionManager::save_folder(const FolderInfo& folder) {
+    try {
+        std::vector<FolderInfo> folders = load_folders();
+
+        // Check if folder with same ID exists
+        auto it = std::find_if(folders.begin(), folders.end(),
+            [&folder](const FolderInfo& f) { return f.id == folder.id; });
+
+        if (it != folders.end()) {
+            // Replace existing folder
+            *it = folder;
+        } else {
+            // Add new folder
+            folders.push_back(folder);
+        }
+
+        // Write back to file
+        json j_folders = json::array();
+        for (const auto& f : folders) {
+            j_folders.push_back({
+                {"id", f.id},
+                {"name", f.name}
+            });
+        }
+
+        std::ofstream file(get_folders_file());
+        file << j_folders.dump(4);
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "Error saving folder: " << e.what() << std::endl;
+        return false;
+    }
+}
+
 std::vector<ConnectionInfo> ConnectionManager::load_connections() {
     std::vector<ConnectionInfo> connections;
-
     try {
-        std::filesystem::path connections_dir = get_connections_directory();
-
-        // Check if directory exists
-        if (!std::filesystem::exists(connections_dir)) {
+        if (!std::filesystem::exists(get_connections_file())) {
             return connections;
         }
 
-        // Iterate through JSON files in the directory
-        for (const auto& entry : std::filesystem::directory_iterator(connections_dir)) {
-            if (entry.is_regular_file() && entry.path().extension() == ".json") {
-                try {
-                    std::ifstream file(entry.path());
-                    json connection_json;
-                    file >> connection_json;
+        std::ifstream file(get_connections_file());
+        json j_connections;
+        file >> j_connections;
 
-                    ConnectionInfo connection{
-                        connection_json["id"].get<std::string>(),
-                        connection_json["name"].get<std::string>(),
-                        connection_json["host"].get<std::string>(),
-                        connection_json["port"].get<int>(),
-                        connection_json["username"].get<std::string>()
-                    };
-
-                    connections.push_back(connection);
-                } catch (const std::exception& e) {
-                    std::cerr << "Error reading connection file "
-                              << entry.path() << ": " << e.what() << std::endl;
-                }
-            }
+        for (const auto& j_conn : j_connections) {
+            ConnectionInfo conn;
+            conn.id = j_conn["id"];
+            conn.name = j_conn["name"];
+            conn.host = j_conn.value("host", "");
+            conn.port = j_conn.value("port", 22);
+            conn.username = j_conn.value("username", "");
+            conn.folder_id = j_conn.value("folder_id", "");
+            connections.push_back(conn);
         }
     } catch (const std::exception& e) {
         std::cerr << "Error loading connections: " << e.what() << std::endl;
     }
-
     return connections;
+}
+
+std::vector<FolderInfo> ConnectionManager::load_folders() {
+    std::vector<FolderInfo> folders;
+    try {
+        if (!std::filesystem::exists(get_folders_file())) {
+            return folders;
+        }
+
+        std::ifstream file(get_folders_file());
+        json j_folders;
+        file >> j_folders;
+
+        for (const auto& j_folder : j_folders) {
+            FolderInfo folder;
+            folder.id = j_folder["id"];
+            folder.name = j_folder["name"];
+            folders.push_back(folder);
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Error loading folders: " << e.what() << std::endl;
+    }
+    return folders;
 }
 
 bool ConnectionManager::delete_connection(const std::string& connection_id) {
     try {
-        std::filesystem::path connections_dir = get_connections_directory();
-        std::filesystem::path connection_file = connections_dir / (connection_id + ".json");
+        std::vector<ConnectionInfo> connections = load_connections();
 
-        if (std::filesystem::exists(connection_file)) {
-            std::filesystem::remove(connection_file);
-            std::cout << "Deleted connection: " << connection_id << std::endl;
+        auto it = std::remove_if(connections.begin(), connections.end(),
+            [&connection_id](const ConnectionInfo& c) { return c.id == connection_id; });
+
+        if (it != connections.end()) {
+            connections.erase(it, connections.end());
+
+            // Write back to file
+            json j_connections = json::array();
+            for (const auto& conn : connections) {
+                j_connections.push_back({
+                    {"id", conn.id},
+                    {"name", conn.name},
+                    {"host", conn.host},
+                    {"port", conn.port},
+                    {"username", conn.username},
+                    {"folder_id", conn.folder_id}
+                });
+            }
+
+            std::ofstream file(get_connections_file());
+            file << j_connections.dump(4);
             return true;
         }
-
-        std::cerr << "Connection file not found: " << connection_id << std::endl;
         return false;
     } catch (const std::exception& e) {
         std::cerr << "Error deleting connection: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+bool ConnectionManager::delete_folder(const std::string& folder_id) {
+    try {
+        std::vector<FolderInfo> folders = load_folders();
+
+        auto it = std::remove_if(folders.begin(), folders.end(),
+            [&folder_id](const FolderInfo& f) { return f.id == folder_id; });
+
+        if (it != folders.end()) {
+            folders.erase(it, folders.end());
+
+            // Write back to file
+            json j_folders = json::array();
+            for (const auto& folder : folders) {
+                j_folders.push_back({
+                    {"id", folder.id},
+                    {"name", folder.name}
+                });
+            }
+
+            std::ofstream file(get_folders_file());
+            file << j_folders.dump(4);
+            return true;
+        }
+        return false;
+    } catch (const std::exception& e) {
+        std::cerr << "Error deleting folder: " << e.what() << std::endl;
         return false;
     }
 }

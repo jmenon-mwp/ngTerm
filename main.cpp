@@ -17,17 +17,21 @@ class ConnectionColumns : public Gtk::TreeModel::ColumnRecord {
 public:
     ConnectionColumns() {
         add(name);
+        add(id);
+        add(is_folder);
     }
-    Gtk::TreeModelColumn<Glib::ustring> name; // Column to hold connection names (as strings)
+    Gtk::TreeModelColumn<Glib::ustring> name;   // Name of folder or connection
+    Gtk::TreeModelColumn<Glib::ustring> id;     // Folder or connection ID
+    Gtk::TreeModelColumn<bool> is_folder;       // Whether this row is a folder
 };
 
 // Function prototypes to allow cross-referencing
 void build_menu(Gtk::MenuBar& menubar, Gtk::Notebook& notebook, Gtk::TreeView& connections_treeview,
-                Glib::RefPtr<Gtk::ListStore>& connections_liststore, ConnectionColumns& columns);
+                Glib::RefPtr<Gtk::TreeStore>& connections_liststore, ConnectionColumns& columns);
 void build_leftFrame(Gtk::Frame& left_frame, Gtk::ScrolledWindow& left_scrolled_window,
-                     Gtk::TreeView& connections_treeview,
-                     Glib::RefPtr<Gtk::ListStore>& connections_liststore,
-                     ConnectionColumns& columns);
+                    Gtk::TreeView& connections_treeview,
+                    Glib::RefPtr<Gtk::TreeStore>& connections_liststore,
+                    ConnectionColumns& columns);
 void build_rightFrame(Gtk::Notebook& notebook);
 
 // Function to manage application configuration
@@ -154,8 +158,6 @@ void save_config(const json& config) {
         file << config.dump(4);  // Pretty print with 4 spaces
         file.close();
 
-        std::cout << "Saved config: width=" << config["window_width"]
-                  << ", height=" << config["window_height"] << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "Error writing config file: " << e.what() << std::endl;
     }
@@ -163,7 +165,7 @@ void save_config(const json& config) {
 
 // Function to build the menu
 void build_menu(Gtk::MenuBar& menubar, Gtk::Notebook& notebook, Gtk::TreeView& connections_treeview,
-                Glib::RefPtr<Gtk::ListStore>& connections_liststore, ConnectionColumns& columns) {
+                Glib::RefPtr<Gtk::TreeStore>& connections_liststore, ConnectionColumns& columns) {
 
     // Create File menu
     Gtk::Menu* file_submenu = Gtk::manage(new Gtk::Menu());
@@ -180,8 +182,10 @@ void build_menu(Gtk::MenuBar& menubar, Gtk::Notebook& notebook, Gtk::TreeView& c
     Gtk::Menu* settings_submenu = Gtk::manage(new Gtk::Menu());
     settings_menu_item->set_submenu(*settings_submenu);
     Gtk::MenuItem* add_connection_item = Gtk::manage(new Gtk::MenuItem("Add Connection"));
+    Gtk::MenuItem* add_folder_item = Gtk::manage(new Gtk::MenuItem("New Folder"));
     Gtk::MenuItem* preferences_item = Gtk::manage(new Gtk::MenuItem("Preferences"));
     settings_submenu->append(*add_connection_item);
+    settings_submenu->append(*add_folder_item);
     settings_submenu->append(*preferences_item);
 
     // Create Help menu
@@ -200,61 +204,117 @@ void build_menu(Gtk::MenuBar& menubar, Gtk::Notebook& notebook, Gtk::TreeView& c
     add_connection_item->signal_activate().connect([&]() {
         // Create an input dialog for connection details
         Gtk::Dialog dialog("Add Connection", true);
-        dialog.set_default_size(300, 200);
+        // dialog.set_default_size(450, 350); // Removed to allow auto-sizing
 
-        // Create a vertical box for the dialog
-        Gtk::Box* content_area = dialog.get_content_area();
+        // Use a Grid for layout
+        Gtk::Grid* grid = Gtk::manage(new Gtk::Grid());
+        grid->set_column_spacing(10);
+        grid->set_row_spacing(10);
+        grid->set_margin_top(10);
+        grid->set_margin_bottom(10);
+        grid->set_margin_start(10);
+        grid->set_margin_end(10);
+        grid->set_vexpand(false); // Prevent grid from expanding vertically
+
+        // Folder selection (now first)
+        Gtk::Label folder_label("Folder:");
+        Gtk::ComboBoxText folder_combo;
+        folder_combo.append("", ""); // Empty option for no folder (display name, id)
+        // Populate folder dropdown
+        std::vector<FolderInfo> folders = ConnectionManager::load_folders();
+        for (const auto& folder : folders) {
+            folder_combo.append(folder.id, folder.name); // store ID, display name
+        }
+        folder_combo.set_hexpand(true);
+        folder_combo.set_vexpand(false);
+        grid->attach(folder_label, 0, 0, 1, 1);
+        grid->attach(folder_combo, 1, 0, 1, 1);
 
         // Create labels and entries for connection details
         Gtk::Label name_label("Connection Name:");
         Gtk::Entry name_entry;
+        name_entry.set_hexpand(true);
+        name_entry.set_vexpand(false);
+        grid->attach(name_label, 0, 1, 1, 1);
+        grid->attach(name_entry, 1, 1, 1, 1);
+
         Gtk::Label host_label("Host:");
         Gtk::Entry host_entry;
+        host_entry.set_hexpand(true);
+        host_entry.set_vexpand(false);
+        grid->attach(host_label, 0, 2, 1, 1);
+        grid->attach(host_entry, 1, 2, 1, 1);
+
         Gtk::Label port_label("Port:");
         Gtk::Entry port_entry;
+        port_entry.set_hexpand(true);
+        port_entry.set_vexpand(false);
+        grid->attach(port_label, 0, 3, 1, 1);
+        grid->attach(port_entry, 1, 3, 1, 1);
+
         Gtk::Label username_label("Username:");
         Gtk::Entry username_entry;
+        username_entry.set_hexpand(true);
+        username_entry.set_vexpand(false);
+        grid->attach(username_label, 0, 4, 1, 1);
+        grid->attach(username_entry, 1, 4, 1, 1);
 
-        // Pack the labels and entries into the dialog
-        content_area->pack_start(name_label);
-        content_area->pack_start(name_entry);
-        content_area->pack_start(host_label);
-        content_area->pack_start(host_entry);
-        content_area->pack_start(port_label);
-        content_area->pack_start(port_entry);
-        content_area->pack_start(username_label);
-        content_area->pack_start(username_entry);
+        // Add the grid to the dialog's content area
+        Gtk::Box* content_area = dialog.get_content_area();
+        content_area->pack_start(*grid);
 
         // Show all widgets
         content_area->show_all();
 
-        // Add standard dialog buttons
+        // Add buttons to the dialog
         dialog.add_button("Cancel", Gtk::RESPONSE_CANCEL);
-        dialog.add_button("Add", Gtk::RESPONSE_OK);
+        dialog.add_button("Save", Gtk::RESPONSE_OK);
 
-        // Run the dialog and get the response
+        // Run the dialog and handle the response
         int response = dialog.run();
+        dialog.close(); // Ensure dialog is closed before further processing
 
-        // Process the response
         if (response == Gtk::RESPONSE_OK) {
             // Validate inputs
             std::string name = name_entry.get_text();
+
+            // Validate that a name is provided
+            if (name.empty()) {
+                Gtk::MessageDialog error_dialog("Invalid Name", false, Gtk::MESSAGE_ERROR);
+                error_dialog.set_secondary_text("Connection name cannot be empty.");
+                error_dialog.run();
+                return;
+            }
+
             std::string host = host_entry.get_text();
             std::string username = username_entry.get_text();
-            int port = 22; // Default to SSH port, could be made configurable
+            int port = 22; // Default to SSH port
 
             // Try to parse port if provided
             try {
                 if (!port_entry.get_text().empty()) {
                     port = std::stoi(port_entry.get_text());
+                    if (port <= 0 || port > 65535) {
+                        Gtk::MessageDialog error_dialog("Invalid Port", false, Gtk::MESSAGE_ERROR);
+                        error_dialog.set_secondary_text("Port number must be between 1 and 65535.");
+                        error_dialog.run();
+                        return;
+                    }
                 }
-            } catch (const std::exception& e) {
-                // Show error dialog for invalid port
+            } catch (const std::invalid_argument& ia) {
                 Gtk::MessageDialog error_dialog("Invalid Port", false, Gtk::MESSAGE_ERROR);
-                error_dialog.set_secondary_text("Please enter a valid port number.");
+                error_dialog.set_secondary_text("Port must be a valid number.");
+                error_dialog.run();
+                return;
+            } catch (const std::out_of_range& oor) {
+                Gtk::MessageDialog error_dialog("Invalid Port", false, Gtk::MESSAGE_ERROR);
+                error_dialog.set_secondary_text("Port number is out of range.");
                 error_dialog.run();
                 return;
             }
+
+            // Get selected folder ID
+            std::string folder_id = folder_combo.get_active_id();
 
             // Create ConnectionInfo
             ConnectionInfo new_connection{
@@ -262,21 +322,89 @@ void build_menu(Gtk::MenuBar& menubar, Gtk::Notebook& notebook, Gtk::TreeView& c
                 name,
                 host,
                 port,
-                username
+                username,
+                folder_id
             };
 
             // Save the connection
             if (ConnectionManager::save_connection(new_connection)) {
-                // Update the connections treeview
-                Gtk::TreeModel::Row row = *(connections_liststore->append());
-                row[columns.name] = new_connection.name;
+                // If a folder is selected, add under that folder
+                if (!folder_id.empty()) {
+                    auto children = connections_liststore->children();
+                    Gtk::TreeModel::Children::iterator parent_iter;
+                    bool found_folder = false;
+                    for (auto& row : children) {
+                        if (row[columns.id] == folder_id && row[columns.is_folder] == true) {
+                            parent_iter = row.children().begin(); // Dummy assignment, actual append is to row.children()
+                            Gtk::TreeModel::Row conn_row = *(connections_liststore->append(row.children()));
+                            conn_row[columns.name] = new_connection.name;
+                            conn_row[columns.id] = new_connection.id;
+                            conn_row[columns.is_folder] = false;
+                            found_folder = true;
+                            connections_treeview.expand_row(connections_liststore->get_path(row), false); // Expand the parent folder
+                            break;
+                        }
+                    }
+                     if (!found_folder) { // Safety check, though ideally folder should always be found if ID is present
+                        Gtk::TreeModel::Row conn_row = *(connections_liststore->append());
+                        conn_row[columns.name] = new_connection.name;
+                        conn_row[columns.id] = new_connection.id;
+                        conn_row[columns.is_folder] = false;
+                    }
+                } else {
+                    // Add as a top-level connection
+                    Gtk::TreeModel::Row conn_row = *(connections_liststore->append());
+                    conn_row[columns.name] = new_connection.name;
+                    conn_row[columns.id] = new_connection.id;
+                    conn_row[columns.is_folder] = false;
+                }
             } else {
                 // Show error dialog if saving failed
                 Gtk::MessageDialog error_dialog("Save Failed", false, Gtk::MESSAGE_ERROR);
-                error_dialog.set_secondary_text("Could not save the connection.");
+                error_dialog.set_secondary_text("Failed to save the connection.");
                 error_dialog.run();
             }
         }
+    });
+
+    // Add folder menu item
+    add_folder_item->signal_activate().connect([&]() {
+        // Create a dialog for new folder
+        Gtk::Dialog folder_dialog("New Folder", true);
+        folder_dialog.set_default_size(250, 150);
+
+        Gtk::Box* folder_content_area = folder_dialog.get_content_area();
+        Gtk::Label folder_name_label("Folder Name:");
+        Gtk::Entry folder_name_entry;
+
+        folder_content_area->pack_start(folder_name_label);
+        folder_content_area->pack_start(folder_name_entry);
+
+        folder_dialog.add_button("Cancel", Gtk::RESPONSE_CANCEL);
+        folder_dialog.add_button("Create", Gtk::RESPONSE_OK);
+
+        folder_content_area->show_all();
+
+        int folder_response = folder_dialog.run();
+        if (folder_response == Gtk::RESPONSE_OK) {
+            std::string new_folder_name = folder_name_entry.get_text();
+            if (!new_folder_name.empty()) {
+                // Create new folder
+                FolderInfo new_folder{
+                    ConnectionManager::generate_folder_id(),
+                    new_folder_name
+                };
+
+                if (ConnectionManager::save_folder(new_folder)) {
+                    // Add to treeview
+                    Gtk::TreeModel::Row row = *(connections_liststore->append());
+                    row[columns.name] = new_folder_name;
+                    row[columns.id] = new_folder.id;
+                    row[columns.is_folder] = true;
+                }
+            }
+        }
+        folder_dialog.close();
     });
 
     // Preferences handler (placeholder)
@@ -302,11 +430,9 @@ void build_menu(Gtk::MenuBar& menubar, Gtk::Notebook& notebook, Gtk::TreeView& c
 
 // Function to build the left frame
 void build_leftFrame(Gtk::Frame& left_frame, Gtk::ScrolledWindow& left_scrolled_window,
-                     Gtk::TreeView& connections_treeview,
-                     Glib::RefPtr<Gtk::ListStore>& connections_liststore,
-                     ConnectionColumns& columns) {
-    // Configure the left frame
-    left_frame.set_label("Connections");
+                    Gtk::TreeView& connections_treeview,
+                    Glib::RefPtr<Gtk::TreeStore>& connections_liststore,
+                    ConnectionColumns& columns) {
     left_frame.set_shadow_type(Gtk::SHADOW_IN);
 
     // Configure the scrolled window
@@ -316,8 +442,7 @@ void build_leftFrame(Gtk::Frame& left_frame, Gtk::ScrolledWindow& left_scrolled_
     connections_treeview.set_hexpand(true);
     connections_treeview.set_vexpand(true);
 
-    // Create a ListStore to hold the data for the TreeView
-    connections_liststore = Gtk::ListStore::create(columns);
+    // Create a TreeStore to hold the data for the TreeView
     connections_treeview.set_model(connections_liststore);
 
     // Add columns to the TreeView
@@ -362,8 +487,7 @@ int main(int argc, char* argv[]) {
     Gtk::Notebook notebook;
     Gtk::TreeView connections_treeview;
     ConnectionColumns columns;
-    Glib::RefPtr<Gtk::ListStore> connections_liststore =
-        Gtk::ListStore::create(columns);
+    Glib::RefPtr<Gtk::TreeStore> connections_liststore = Gtk::TreeStore::create(columns);
     connections_treeview.set_model(connections_liststore);
 
     build_menu(menubar, notebook, connections_treeview, connections_liststore, columns);
@@ -376,7 +500,7 @@ int main(int argc, char* argv[]) {
     main_vbox.pack_start(main_hpaned, true, true, 0);
 
     // Create left frame components
-    Gtk::Frame left_frame("Connections");
+    Gtk::Frame left_frame;
     Gtk::ScrolledWindow left_scrolled_window;
 
     // Build left frame
@@ -393,13 +517,40 @@ int main(int argc, char* argv[]) {
     main_hpaned.set_position(250);
 
     // Preload saved connections
-    std::vector<ConnectionInfo> saved_connections = ConnectionManager::load_connections();
+    std::vector<FolderInfo> folders = ConnectionManager::load_folders();
+    std::vector<ConnectionInfo> connections = ConnectionManager::load_connections();
 
-    // Populate the connections list store with loaded connections
-    for (const auto& connection : saved_connections) {
-        Gtk::TreeModel::Row row = *(connections_liststore->append());
-        row[columns.name] = connection.name;
+    // Populate the TreeStore with folders and connections
+    for (const auto& folder : folders) {
+        Gtk::TreeModel::Row folder_row = *(connections_liststore->append());
+        folder_row[columns.name] = folder.name;
+        folder_row[columns.id] = folder.id;
+        folder_row[columns.is_folder] = true;
+
+        // Add connections under this folder
+        std::vector<ConnectionInfo> folder_connections =
+            ConnectionManager::get_connections_by_folder(folder.id);
+
+        for (const auto& connection : folder_connections) {
+            Gtk::TreeModel::Row conn_row = *(connections_liststore->append(folder_row.children()));
+            conn_row[columns.name] = connection.name;
+            conn_row[columns.id] = connection.id;
+            conn_row[columns.is_folder] = false;
+        }
     }
+
+    // Add connections without a folder
+    for (const auto& connection : connections) {
+        if (connection.folder_id.empty()) {
+            Gtk::TreeModel::Row conn_row = *(connections_liststore->append());
+            conn_row[columns.name] = connection.name;
+            conn_row[columns.id] = connection.id;
+            conn_row[columns.is_folder] = false;
+        }
+    }
+
+    // Expand all rows in the TreeView
+    connections_treeview.expand_all();
 
     // Add double-click event handler for connections_treeview
     connections_treeview.signal_row_activated().connect([&notebook, &columns, &connections_liststore](const Gtk::TreeModel::Path& path, Gtk::TreeViewColumn*) {
@@ -428,7 +579,24 @@ int main(int argc, char* argv[]) {
                 };
 
                 TerminalData* data = new TerminalData{&notebook, notebook.append_page(*terminal_box, *tab_label)};
-                notebook.show_all();
+                notebook.set_current_page(data->page_num);
+
+                notebook.show_all(); // Moved earlier to ensure tab visibility before VTE focus
+
+                // Static function to set focus
+                static auto focus_terminal = [](gpointer data) -> gboolean {
+                    GtkWidget* widget = GTK_WIDGET(data);
+                    // Check if widget is valid, realized, visible, and sensitive before grabbing focus
+                    if (widget && gtk_widget_get_realized(widget) && gtk_widget_get_visible(widget) && gtk_widget_is_sensitive(widget)) {
+                        gtk_widget_grab_focus(widget);
+                    }
+                    return FALSE; // run only once
+                };
+
+                // Pass the VTE widget to the idle callback
+                g_idle_add(focus_terminal, vte_widget);
+
+                vte_terminal_set_input_enabled(VTE_TERMINAL(vte_widget), TRUE);
 
                 // Static callback function
                 auto child_watch_callback = [](GPid pid, gint status, gpointer user_data) {
