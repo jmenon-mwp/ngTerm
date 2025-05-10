@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include "Connections.h"
 
 using json = nlohmann::json;
 
@@ -197,40 +198,83 @@ void build_menu(Gtk::MenuBar& menubar, Gtk::Notebook& notebook, Gtk::TreeView& c
 
     // Connect menu item handlers
     add_connection_item->signal_activate().connect([&]() {
-        // Create an input dialog for connection name
+        // Create an input dialog for connection details
         Gtk::Dialog dialog("Add Connection", true);
-        dialog.set_default_size(300, 100);
+        dialog.set_default_size(300, 200);
 
         // Create a vertical box for the dialog
         Gtk::Box* content_area = dialog.get_content_area();
 
-        // Create a label and entry for connection name
+        // Create labels and entries for connection details
         Gtk::Label name_label("Connection Name:");
         Gtk::Entry name_entry;
+        Gtk::Label host_label("Host:");
+        Gtk::Entry host_entry;
+        Gtk::Label port_label("Port:");
+        Gtk::Entry port_entry;
+        Gtk::Label username_label("Username:");
+        Gtk::Entry username_entry;
 
-        // Pack the label and entry into the dialog
+        // Pack the labels and entries into the dialog
         content_area->pack_start(name_label);
         content_area->pack_start(name_entry);
+        content_area->pack_start(host_label);
+        content_area->pack_start(host_entry);
+        content_area->pack_start(port_label);
+        content_area->pack_start(port_entry);
+        content_area->pack_start(username_label);
+        content_area->pack_start(username_entry);
+
+        // Show all widgets
+        content_area->show_all();
 
         // Add standard dialog buttons
         dialog.add_button("Cancel", Gtk::RESPONSE_CANCEL);
         dialog.add_button("Add", Gtk::RESPONSE_OK);
-
-        // Show all widgets in the dialog
-        dialog.show_all();
 
         // Run the dialog and get the response
         int response = dialog.run();
 
         // Process the response
         if (response == Gtk::RESPONSE_OK) {
-            Glib::ustring connection_name = name_entry.get_text();
+            // Validate inputs
+            std::string name = name_entry.get_text();
+            std::string host = host_entry.get_text();
+            std::string username = username_entry.get_text();
+            int port = 22; // Default to SSH port, could be made configurable
 
-            // Validate the connection name
-            if (!connection_name.empty()) {
-                // Add the new connection to the list store
+            // Try to parse port if provided
+            try {
+                if (!port_entry.get_text().empty()) {
+                    port = std::stoi(port_entry.get_text());
+                }
+            } catch (const std::exception& e) {
+                // Show error dialog for invalid port
+                Gtk::MessageDialog error_dialog("Invalid Port", false, Gtk::MESSAGE_ERROR);
+                error_dialog.set_secondary_text("Please enter a valid port number.");
+                error_dialog.run();
+                return;
+            }
+
+            // Create ConnectionInfo
+            ConnectionInfo new_connection{
+                ConnectionManager::generate_connection_id(), // Generate unique ID
+                name,
+                host,
+                port,
+                username
+            };
+
+            // Save the connection
+            if (ConnectionManager::save_connection(new_connection)) {
+                // Update the connections treeview
                 Gtk::TreeModel::Row row = *(connections_liststore->append());
-                row[columns.name] = connection_name;
+                row[columns.name] = new_connection.name;
+            } else {
+                // Show error dialog if saving failed
+                Gtk::MessageDialog error_dialog("Save Failed", false, Gtk::MESSAGE_ERROR);
+                error_dialog.set_secondary_text("Could not save the connection.");
+                error_dialog.run();
             }
         }
     });
@@ -347,6 +391,15 @@ int main(int argc, char* argv[]) {
 
     // Set the initial position of the paned widget
     main_hpaned.set_position(250);
+
+    // Preload saved connections
+    std::vector<ConnectionInfo> saved_connections = ConnectionManager::load_connections();
+
+    // Populate the connections list store with loaded connections
+    for (const auto& connection : saved_connections) {
+        Gtk::TreeModel::Row row = *(connections_liststore->append());
+        row[columns.name] = connection.name;
+    }
 
     // Add double-click event handler for connections_treeview
     connections_treeview.signal_row_activated().connect([&notebook, &columns, &connections_liststore](const Gtk::TreeModel::Path& path, Gtk::TreeViewColumn*) {
