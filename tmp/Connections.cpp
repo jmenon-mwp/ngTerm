@@ -87,18 +87,17 @@ bool ConnectionManager::save_folder(const FolderInfo& folder) {
             // Replace existing folder
             *it = folder;
         } else {
-            // Add the new folder to the list
+            // Add new folder
             folders.push_back(folder);
         }
 
-        // Write the updated list back to the file
+        // Write back to file
         json j_folders = json::array();
         for (const auto& f : folders) {
-            json j_folder;
-            j_folder["id"] = f.id;
-            j_folder["name"] = f.name;
-            j_folder["parent_id"] = f.parent_id; // Save parent_id
-            j_folders.push_back(j_folder);
+            j_folders.push_back({
+                {"id", f.id},
+                {"name", f.name}
+            });
         }
 
         std::ofstream file(get_folders_file());
@@ -112,14 +111,12 @@ bool ConnectionManager::save_folder(const FolderInfo& folder) {
 
 std::vector<ConnectionInfo> ConnectionManager::load_connections() {
     std::vector<ConnectionInfo> connections;
-    std::filesystem::path connections_file = get_connections_file(); // Use the helper function
-
-    if (!std::filesystem::exists(connections_file)) {
-        return connections;
-    }
-
-    std::ifstream file(connections_file);
     try {
+        if (!std::filesystem::exists(get_connections_file())) {
+            return connections;
+        }
+
+        std::ifstream file(get_connections_file());
         json j_connections;
         file >> j_connections;
 
@@ -142,31 +139,24 @@ std::vector<ConnectionInfo> ConnectionManager::load_connections() {
 
 std::vector<FolderInfo> ConnectionManager::load_folders() {
     std::vector<FolderInfo> folders;
-    std::filesystem::path folders_file = get_folders_file(); // Use the helper function
-
-    if (!std::filesystem::exists(folders_file)) {
-        return folders;
-    }
-
-    std::ifstream file(folders_file);
     try {
+        if (!std::filesystem::exists(get_folders_file())) {
+            return folders;
+        }
+
+        std::ifstream file(get_folders_file());
         json j_folders;
         file >> j_folders;
 
-        for (const auto& item : j_folders) {
+        for (const auto& j_folder : j_folders) {
             FolderInfo folder;
-            folder.id = item.value("id", "");
-            folder.name = item.value("name", "");
-            folder.parent_id = item.value("parent_id", ""); // Load parent_id, default to empty string if not found
+            folder.id = j_folder["id"];
+            folder.name = j_folder["name"];
             folders.push_back(folder);
         }
-    } catch (const json::exception& e) {
-        std::cerr << "ConnectionManager: Error parsing folders file: " << e.what() << std::endl;
-        if (file.is_open()) file.close();
-        // Optionally, attempt to backup corrupted file and/or return empty list
-        return {}; // Return empty on error
+    } catch (const std::exception& e) {
+        std::cerr << "Error loading folders: " << e.what() << std::endl;
     }
-
     return folders;
 }
 
@@ -220,8 +210,7 @@ bool ConnectionManager::delete_folder(const std::string& folder_id) {
             for (const auto& folder : folders) {
                 j_folders.push_back({
                     {"id", folder.id},
-                    {"name", folder.name},
-                    {"parent_id", folder.parent_id} // Save parent_id
+                    {"name", folder.name}
                 });
             }
 

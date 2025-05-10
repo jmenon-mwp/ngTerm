@@ -19,8 +19,8 @@ GTK_LIBS = $(shell pkg-config --libs gtkmm-3.0 vte-2.91)
 # -Wno-deprecated-declarations: Suppress warnings about deprecated declarations
 CXXFLAGS = -std=c++17 -Wall -Wno-deprecated-declarations $(GTK_CFLAGS)
 
-# Define linker flags to include filesystem library
-LDFLAGS = -lstdc++fs
+# Define linker flags to include filesystem library and libuuid
+LDFLAGS = -lstdc++fs -luuid
 
 # Default target (builds the executable)
 all: $(TARGET)

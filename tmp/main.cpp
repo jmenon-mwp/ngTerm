@@ -3,8 +3,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
-#include <glib.h> // For Glib basic types if needed
-#include <uuid/uuid.h> // For libuuid
+#include <glib.h>
 #include <atomic>  // Add this header for std::atomic
 #include <filesystem>
 #include <fstream>
@@ -13,28 +12,17 @@
 
 using json = nlohmann::json;
 
-// Define custom columns for the TreeView
-struct ConnectionColumns : public Gtk::TreeModel::ColumnRecord {
+// Define a Column Record to hold the data for the TreeView
+class ConnectionColumns : public Gtk::TreeModel::ColumnRecord {
+public:
     ConnectionColumns() {
         add(name);
         add(id);
         add(is_folder);
-        add(is_connection);
-        add(host);
-        add(port);
-        add(username);
-        add(connection_type);
-        add(parent_id_col); // Add parent_id_col here
     }
     Gtk::TreeModelColumn<Glib::ustring> name;   // Name of folder or connection
     Gtk::TreeModelColumn<Glib::ustring> id;     // Folder or connection ID
-    Gtk::TreeModelColumn<bool> is_folder;       // True if it's a folder
-    Gtk::TreeModelColumn<bool> is_connection;   // True if it's a connection
-    Gtk::TreeModelColumn<Glib::ustring> host;   // Hostname or IP address
-    Gtk::TreeModelColumn<Glib::ustring> port;   // Port number (stored as string)
-    Gtk::TreeModelColumn<Glib::ustring> username; // Username
-    Gtk::TreeModelColumn<Glib::ustring> connection_type; // Connection type (e.g., SSH, Telnet)
-    Gtk::TreeModelColumn<Glib::ustring> parent_id_col; // Parent ID (for folders and connections)
+    Gtk::TreeModelColumn<bool> is_folder;       // Whether this row is a folder
 };
 
 // Function prototypes to allow cross-referencing
@@ -423,79 +411,47 @@ void build_menu(Gtk::MenuBar& menubar, Gtk::Notebook& notebook, Gtk::TreeView& c
     });
 
     // Add folder menu item
-    add_folder_item->signal_activate().connect([&connections_liststore, &columns, &connections_treeview]() {
-        Gtk::Dialog dialog("Add New Folder", true /* modal */);
-        dialog.set_default_size(350, 200); // Adjusted size
+    add_folder_item->signal_activate().connect([&]() {
+        // Create a dialog for new folder
+        Gtk::Dialog folder_dialog("New Folder", true);
+        folder_dialog.set_default_size(250, 150);
 
-        Gtk::Grid* grid = Gtk::manage(new Gtk::Grid());
-        grid->set_border_width(10);
-        grid->set_column_spacing(10);
-        grid->set_row_spacing(10);
-        dialog.get_content_area()->pack_start(*grid, Gtk::PACK_EXPAND_WIDGET);
+        Gtk::Box* folder_content_area = folder_dialog.get_content_area();
+        Gtk::Label folder_name_label("Folder Name:");
+        Gtk::Entry folder_name_entry;
 
-        // Folder Name
-        Gtk::Label name_label("Folder Name:");
-        name_label.set_halign(Gtk::ALIGN_START);
-        Gtk::Entry name_entry;
-        name_entry.set_hexpand(true);
+        folder_content_area->pack_start(folder_name_label);
+        folder_content_area->pack_start(folder_name_entry);
 
-        // Parent Folder
-        Gtk::Label parent_label("Parent Folder:");
-        parent_label.set_halign(Gtk::ALIGN_START);
-        Gtk::ComboBoxText parent_combo;
-        parent_combo.set_hexpand(true);
-        parent_combo.append("", "(Root Level)"); // ID, Text. Empty ID for root.
+        folder_dialog.add_button("Cancel", Gtk::RESPONSE_CANCEL);
+        folder_dialog.add_button("Create", Gtk::RESPONSE_OK);
 
-        // Populate parent_combo with existing folders
-        std::vector<FolderInfo> existing_folders = ConnectionManager::load_folders();
-        for (const auto& folder : existing_folders) {
-            parent_combo.append(folder.id, folder.name);
-        }
-        parent_combo.set_active(0); // Default to (Root Level)
+        folder_content_area->show_all();
 
-        // Attach to grid
-        grid->attach(name_label,   0, 0, 1, 1);
-        grid->attach(name_entry,   1, 0, 1, 1);
-        grid->attach(parent_label, 0, 1, 1, 1);
-        grid->attach(parent_combo, 1, 1, 1, 1);
+        int folder_response = folder_dialog.run();
+        if (folder_response == Gtk::RESPONSE_OK) {
+            std::string new_folder_name = folder_name_entry.get_text();
+            if (!new_folder_name.empty()) {
+                // Create new folder
+                FolderInfo new_folder{
+                    ConnectionManager::generate_folder_id(),
+                    new_folder_name
+                };
 
-        dialog.add_button("_Cancel", Gtk::RESPONSE_CANCEL);
-        dialog.add_button("_Save", Gtk::RESPONSE_OK);
-        dialog.show_all();
-
-        int response = dialog.run();
-        if (response == Gtk::RESPONSE_OK) {
-            std::string folder_name = name_entry.get_text();
-            std::string parent_id = parent_combo.get_active_id();
-
-            if (folder_name.empty()) {
-                Gtk::MessageDialog warning_dialog("Folder Name Empty", false, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_OK, true);
-                warning_dialog.set_secondary_text("Folder name cannot be empty.");
-                warning_dialog.run();
-                return;
-            }
-
-            FolderInfo new_folder;
-            uuid_t uuid; // libuuid type
-            uuid_generate_random(uuid); // Generate a random UUID
-            char uuid_str[37]; // Buffer for string representation (36 chars + null)
-            uuid_unparse_lower(uuid, uuid_str); // Convert to string
-            new_folder.id = uuid_str; // Assign to FolderInfo
-
-            new_folder.name = folder_name;
-            new_folder.parent_id = parent_id;
-
-            if (ConnectionManager::save_folder(new_folder)) {
-                populate_connections_treeview(connections_liststore, columns, connections_treeview);
-            } else {
-                Gtk::MessageDialog error_dialog("Save Failed", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
-                error_dialog.set_secondary_text("Could not save the new folder.");
-                error_dialog.run();
+                if (ConnectionManager::save_folder(new_folder)) {
+                    // Add to treeview
+                    Gtk::TreeModel::Row row = *(connections_liststore->append());
+                    row[columns.name] = new_folder_name;
+                    row[columns.id] = new_folder.id;
+                    row[columns.is_folder] = true;
+                }
             }
         }
+        folder_dialog.close();
     });
 
-    preferences_item->signal_activate().connect([&](){
+    // Preferences handler (placeholder)
+    preferences_item->signal_activate().connect([&]() {
         Gtk::MessageDialog dialog("Preferences", false, Gtk::MESSAGE_INFO, Gtk::BUTTONS_OK, true);
         dialog.set_secondary_text("Preferences dialog not implemented yet.");
         dialog.run();
@@ -548,146 +504,44 @@ void build_rightFrame(Gtk::Notebook& notebook) {
     notebook.set_tab_pos(Gtk::POS_TOP);
 }
 
-// Updated function to populate the connections TreeView with hierarchy
+// Function to populate the connections TreeView
 void populate_connections_treeview(Glib::RefPtr<Gtk::TreeStore>& liststore, ConnectionColumns& cols, Gtk::TreeView& treeview) {
-    liststore->clear(); // Clear existing items
-
+    // Preload saved connections
     std::vector<FolderInfo> folders = ConnectionManager::load_folders();
     std::vector<ConnectionInfo> connections = ConnectionManager::load_connections();
 
-    // Optional Debugging Output (can be uncommented if needed)
-    // std::cout << "Debug: Folders loaded: " << folders.size() << std::endl;
-    // for(const auto& f : folders) {
-    //     std::cout << "  Folder ID: " << f.id << ", Name: " << f.name << ", Parent ID: " << f.parent_id << std::endl;
-    // }
-    // std::cout << "Debug: Connections loaded: " << connections.size() << std::endl;
-    // for(const auto& c : connections) {
-    //     std::cout << "  Conn ID: " << c.id << ", Name: " << c.name << ", Folder ID: " << c.folder_id << std::endl;
-    // }
+    // Populate the TreeStore with folders and connections
+    liststore->clear(); // Clear existing items before populating
 
-    // Map to store parent iterators for folders: maps folder_id to its Gtk::TreeModel::iterator
-    std::map<std::string, Gtk::TreeModel::iterator> folder_iters;
-    // Map to store children of each parent: maps parent_id to a vector of pointers to FolderInfo
-    std::map<std::string, std::vector<FolderInfo*>> folder_children_map;
-    // Set of folder IDs that have been added to the tree store to avoid duplicates or cycles
-    std::set<std::string> added_folder_ids;
+    for (const auto& folder : folders) {
+        Gtk::TreeModel::Row folder_row = *(liststore->append());
+        folder_row[cols.name] = folder.name;
+        folder_row[cols.id] = folder.id;
+        folder_row[cols.is_folder] = true;
 
-    // First pass: populate folder_children_map to organize folders by their parent_id
-    // Use a plain for loop to iterate with index to get pointers to elements in 'folders' vector
-    for (size_t i = 0; i < folders.size(); ++i) {
-        folder_children_map[folders[i].parent_id].push_back(&folders[i]);
-    }
-
-    // Recursive lambda to add folders and their children to the TreeStore
-    std::function<void(const std::string&, const Gtk::TreeModel::iterator*)> add_folders_recursive;
-    add_folders_recursive =
-        [&](const std::string& current_parent_id, const Gtk::TreeModel::iterator* parent_iter_ptr) {
-        if (folder_children_map.count(current_parent_id)) {
-            for (FolderInfo* folder_ptr : folder_children_map[current_parent_id]) {
-                const auto& folder = *folder_ptr;
-                if (added_folder_ids.count(folder.id)) {
-                    // std::cerr << "Warning: Folder ID '" << folder.id << "' encountered again or cycle detected. Skipping." << std::endl;
-                    continue; // Already added or detected cycle
-                }
-
-                Gtk::TreeModel::iterator current_iter; // Declare iterator
-                Gtk::TreeModel::Row row;
-                if (parent_iter_ptr) { // If it's a child folder (has a parent iterator)
-                    current_iter = liststore->append((*parent_iter_ptr)->children()); // Assign iterator from append
-                } else { // If it's a root folder (no parent iterator)
-                    current_iter = liststore->append(); // Assign iterator from append
-                }
-                row = *current_iter; // Get row proxy from the iterator
-
-                row[cols.name] = folder.name;
-                row[cols.id] = folder.id;
-                row[cols.parent_id_col] = folder.parent_id; // Store parent_id in its column
-                row[cols.is_folder] = true;
-                row[cols.is_connection] = false;
-                row[cols.host] = ""; // Folders don't have host/port etc.
-                row[cols.port] = "";
-                row[cols.username] = "";
-                row[cols.connection_type] = "";
-
-                folder_iters[folder.id] = current_iter; // Store the obtained iterator
-                added_folder_ids.insert(folder.id);
-
-                // Recursively add children of this folder
-                add_folders_recursive(folder.id, &current_iter);
-            }
-        }
-    };
-
-    // Add root folders (those with empty parent_id)
-    add_folders_recursive("", nullptr);
-
-    // Second pass for any orphaned folders (parent_id exists but parent folder itself was not found/added)
-    // This can happen if parent_id points to a non-existent folder or a folder that couldn't be added due to a cycle.
-    for (const auto& folder_pair : folder_children_map) {
-        const std::string& parent_id_key = folder_pair.first;
-        // Only process if parent_id_key is not empty (root items handled by add_folders_recursive("", nullptr))
-        // and if this parent_id_key itself was not added as a folder (meaning it's an orphan parent reference)
-        if (!parent_id_key.empty() && folder_iters.find(parent_id_key) == folder_iters.end()) {
-            for (FolderInfo* folder_ptr : folder_pair.second) {
-                const auto& folder = *folder_ptr;
-                if (added_folder_ids.find(folder.id) == added_folder_ids.end()) { // If not already added
-                    // std::cerr << "Warning: Folder '" << folder.name << "' (ID: " << folder.id
-                    //           << ") has parent_id '" << folder.parent_id << "' but actual parent folder was not found. Adding to root." << std::endl;
-
-                    Gtk::TreeModel::iterator current_iter = liststore->append(); // Add orphan to root and get iterator
-                    Gtk::TreeModel::Row row = *current_iter; // Get row proxy from iterator
-                    row[cols.name] = folder.name;
-                    row[cols.id] = folder.id;
-                    row[cols.parent_id_col] = ""; // Treat as root, clear its original parent_id for display
-                    row[cols.is_folder] = true;
-                    row[cols.is_connection] = false;
-                    row[cols.host] = ""; row[cols.port] = ""; row[cols.username] = ""; row[cols.connection_type] = "";
-
-                    folder_iters[folder.id] = current_iter; // Store the obtained iterator
-                    added_folder_ids.insert(folder.id);
-                    // Recursively add children of this now root-displayed orphaned folder
-                    add_folders_recursive(folder.id, &current_iter);
-                }
+        // Add connections under this folder
+        for (const auto& connection : connections) {
+            if (connection.folder_id == folder.id) {
+                Gtk::TreeModel::Row conn_row = *(liststore->append(folder_row.children()));
+                conn_row[cols.name] = connection.name;
+                conn_row[cols.id] = connection.id;
+                conn_row[cols.is_folder] = false;
             }
         }
     }
 
-    // Add connections under their respective folders or at the root
+    // Add connections without a folder
     for (const auto& connection : connections) {
-        Gtk::TreeModel::Row conn_row;
-        Gtk::TreeModel::iterator parent_iter;
-        bool parent_found = false;
-
-        if (!connection.folder_id.empty() && folder_iters.count(connection.folder_id)) {
-            // Folder_id is specified and the corresponding folder iterator exists
-            parent_iter = folder_iters[connection.folder_id];
-            parent_found = true;
+        if (connection.folder_id.empty()) {
+            Gtk::TreeModel::Row conn_row = *(liststore->append());
+            conn_row[cols.name] = connection.name;
+            conn_row[cols.id] = connection.id;
+            conn_row[cols.is_folder] = false;
         }
-
-        if (parent_found) {
-            conn_row = *(liststore->append(parent_iter->children()));
-        } else {
-            if (!connection.folder_id.empty()) {
-                // Connection specifies a folder_id, but that folder was not found in folder_iters.
-                // This means it's an orphaned connection, or its parent folder was an orphan and placed at root.
-                // std::cerr << "Warning: Connection '" << connection.name << "' (ID: " << connection.id
-                //           << ") has folder_id '" << connection.folder_id << "' but the folder was not found/placed. Adding connection to root." << std::endl;
-            }
-            // Add to root if folder_id is empty or if the specified folder was not found.
-            conn_row = *(liststore->append());
-        }
-
-        conn_row[cols.name] = connection.name;
-        conn_row[cols.id] = connection.id;
-        conn_row[cols.is_folder] = false;
-        conn_row[cols.is_connection] = true;
-        conn_row[cols.host] = connection.host;
-        conn_row[cols.port] = connection.port > 0 ? std::to_string(connection.port) : "";
-        conn_row[cols.username] = connection.username;
-        conn_row[cols.connection_type] = connection.connection_type;
-        conn_row[cols.parent_id_col] = connection.folder_id; // For connections, parent_id_col stores their folder_id
     }
-    treeview.expand_all(); // Expand all nodes to show the structure
+
+    // Expand all rows in the TreeView
+    treeview.expand_all();
 }
 
 int main(int argc, char* argv[]) {

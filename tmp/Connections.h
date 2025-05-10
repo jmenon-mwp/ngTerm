@@ -16,7 +16,6 @@ using json = nlohmann::json;
 struct FolderInfo {
     std::string id;        // Unique identifier for the folder
     std::string name;      // Display name of the folder
-    std::string parent_id; // ID of the parent folder, empty for root
 };
 
 // Struct to represent connection details
