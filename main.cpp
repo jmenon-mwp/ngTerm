@@ -15,9 +15,10 @@
 #include <gtkmm/toolbutton.h> // For Gtk::ToolButton
 #include <gdkmm/pixbuf.h>   // For Gdk::Pixbuf for icons
 #include "TreeModelColumns.h" // Include the new header for ConnectionColumns
-
 #include "Connections.h"
 #include "Folders.h"
+#include "Ssh.h" // Include Ssh.h
+#include <sys/wait.h> // For wait status macros (WIFEXITED, WEXITSTATUS, etc.)
 
 using json = nlohmann::json;
 
@@ -735,11 +736,11 @@ void build_menu(Gtk::Window& parent_window, Gtk::MenuBar& menubar, Gtk::Notebook
 // Function to build the left frame
 void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::ScrolledWindow& left_scrolled_window,
                     Gtk::TreeView& connections_treeview_ref, // Renamed to avoid conflict
-                    Glib::RefPtr<Gtk::TreeStore>& connections_liststore_ref, // Renamed
+                    Glib::RefPtr<Gtk::TreeStore>& liststore_ref, // Renamed
                     ConnectionColumns& columns_ref, Gtk::Notebook& notebook) { // Added notebook and changed to ConnectionColumns
     // Assign global pointers
     connections_treeview = &connections_treeview_ref;
-    connections_liststore = connections_liststore_ref;
+    connections_liststore = liststore_ref;
     // connection_columns is already global
 
     Gtk::Box* vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 0));
@@ -765,8 +766,8 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
     add_folder_button->set_margin_end(1);
     add_folder_button->set_margin_top(0);
     add_folder_button->set_margin_bottom(0);
-    add_folder_button->signal_clicked().connect([&parent_window, &connections_treeview_ref, &connections_liststore_ref, &columns_ref]() {
-        FolderOps::add_folder(parent_window, connections_treeview_ref, connections_liststore_ref, columns_ref);
+    add_folder_button->signal_clicked().connect([&parent_window, &connections_treeview_ref, &liststore_ref, &columns_ref]() {
+        FolderOps::add_folder(parent_window, connections_treeview_ref, liststore_ref, columns_ref);
     });
     toolbar->append(*add_folder_button);
 
@@ -779,8 +780,8 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
     edit_folder_button->set_margin_end(1);
     edit_folder_button->set_margin_top(0);
     edit_folder_button->set_margin_bottom(0);
-    edit_folder_button->signal_clicked().connect([&parent_window, &connections_treeview_ref, &connections_liststore_ref, &columns_ref]() {
-        FolderOps::edit_folder(parent_window, connections_treeview_ref, connections_liststore_ref, columns_ref);
+    edit_folder_button->signal_clicked().connect([&parent_window, &connections_treeview_ref, &liststore_ref, &columns_ref]() {
+        FolderOps::edit_folder(parent_window, connections_treeview_ref, liststore_ref, columns_ref);
     });
     edit_folder_menu_item_toolbar = edit_folder_button; // Assign to global pointer
     toolbar->append(*edit_folder_button);
@@ -794,8 +795,8 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
     delete_folder_button->set_margin_end(1);
     delete_folder_button->set_margin_top(0);
     delete_folder_button->set_margin_bottom(0);
-    delete_folder_button->signal_clicked().connect([&parent_window, &connections_treeview_ref, &connections_liststore_ref, &columns_ref]() {
-        FolderOps::delete_folder(parent_window, connections_treeview_ref, connections_liststore_ref, columns_ref);
+    delete_folder_button->signal_clicked().connect([&parent_window, &connections_treeview_ref, &liststore_ref, &columns_ref]() {
+        FolderOps::delete_folder(parent_window, connections_treeview_ref, liststore_ref, columns_ref);
     });
     delete_folder_menu_item_toolbar = delete_folder_button; // Assign to global pointer
     toolbar->append(*delete_folder_button);
@@ -834,7 +835,7 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
     delete_conn_button->set_margin_end(1);
     delete_conn_button->set_margin_top(0);
     delete_conn_button->set_margin_bottom(0);
-    delete_conn_button->signal_clicked().connect([&connections_treeview_ref, &connections_liststore_ref, &columns_ref, &parent_window]() { // Added parent_window capture
+    delete_conn_button->signal_clicked().connect([&connections_treeview_ref, &liststore_ref, &columns_ref, &parent_window]() { // Added parent_window capture
         if (!connections_treeview) return; // Ensure global connections_treeview is used or capture local ref
         Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview_ref.get_selection();
         if (selection) {
@@ -849,7 +850,7 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
                     confirmation_dialog.set_secondary_text("Are you sure you want to delete the connection '" + conn_name + "'?");
                     if (confirmation_dialog.run() == Gtk::RESPONSE_YES) {
                         if (ConnectionManager::delete_connection(conn_id)) {
-                            populate_connections_treeview(connections_liststore_ref, columns_ref, connections_treeview_ref);
+                            populate_connections_treeview(liststore_ref, columns_ref, connections_treeview_ref);
                         } else {
                             Gtk::MessageDialog error_dialog(parent_window, "Error", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
                             error_dialog.set_secondary_text("Could not delete the connection '" + conn_name + "'.");
@@ -881,7 +882,7 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
     connections_treeview_ref.set_vexpand(true);
 
     // Create a TreeStore to hold the data for the TreeView
-    connections_treeview_ref.set_model(connections_liststore_ref);
+    connections_treeview_ref.set_model(liststore_ref);
 
     // Add columns to the TreeView
     // Ensure columns are added only once, TreeView might be reused or repopulated
@@ -1048,6 +1049,43 @@ void populate_connections_treeview(Glib::RefPtr<Gtk::TreeStore>& liststore, Conn
     treeview.expand_all(); // Expand all nodes to show the structure
 }
 
+// Define the TerminalData struct globally so its members are known to the callback
+struct TerminalData {
+    Gtk::Notebook* notebook;
+    int page_num;
+    // We might need to add VteTerminal* vte_widget; if we need to interact with it directly in the callback
+};
+
+// Callback function for VTE's "child-exited" signal
+static void on_terminal_child_exited(GtkWidget* widget, gint status, gpointer user_data) {
+    TerminalData* term_data = static_cast<TerminalData*>(user_data);
+
+    // Log the exit status
+    if (WIFEXITED(status)) {
+        int exit_code = WEXITSTATUS(status);
+        if (exit_code != 0) {
+            std::cerr << "  WARNING: Terminal child process exited with non-zero status: " << exit_code << std::endl;
+        }
+    } else if (WIFSIGNALED(status)) {
+        std::cerr << "  ERROR: Terminal child process terminated by signal: " << WTERMSIG(status) << std::endl;
+    } else {
+        std::cerr << "  INFO: Terminal child process exited with unusual status: " << status << std::endl;
+    }
+
+    auto idle_cleanup_callback = [](gpointer data_to_cleanup) -> gboolean {
+        TerminalData* td = static_cast<TerminalData*>(data_to_cleanup);
+        if (td->notebook && td->notebook->get_n_pages() > td->page_num) {
+            Gtk::Widget* page_widget = td->notebook->get_nth_page(td->page_num);
+            if (page_widget) { // Check if the page still exists
+                td->notebook->remove_page(td->page_num);
+            }
+        }
+        delete td;
+        return FALSE;
+    };
+    g_idle_add(idle_cleanup_callback, term_data);
+}
+
 int main(int argc, char* argv[]) {
     // Initialize the GTK+ application
     Gtk::Main kit(argc, argv);
@@ -1190,11 +1228,10 @@ int main(int argc, char* argv[]) {
     populate_connections_treeview(connections_liststore, connection_columns, *connections_treeview);
 
     // Add double-click event handler
-    connections_treeview->signal_row_activated().connect([&notebook](const Gtk::TreeModel::Path& path, Gtk::TreeViewColumn*) { // Use ->
-        if (!connections_liststore) return; // Guard
+    connections_treeview->signal_row_activated().connect([&notebook](const Gtk::TreeModel::Path& path, Gtk::TreeViewColumn*) {
+        if (!connections_liststore) return;
         Gtk::TreeModel::iterator iter = connections_liststore->get_iter(path);
         if (iter) {
-            // Access connection_columns directly as it's a global object (not pointer)
             bool is_folder = (*iter)[connection_columns.is_folder];
             if (is_folder) {
                 return; // Do nothing if a folder is double-clicked
@@ -1203,6 +1240,9 @@ int main(int argc, char* argv[]) {
             bool is_connection = (*iter)[connection_columns.is_connection];
             if (is_connection) {
                 Glib::ustring connection_name = static_cast<Glib::ustring>((*iter)[connection_columns.name]);
+                Glib::ustring conn_type_ustring = static_cast<Glib::ustring>((*iter)[connection_columns.connection_type]);
+                std::string connection_type_str = conn_type_ustring.raw();
+
                 Gtk::VBox* terminal_box = Gtk::manage(new Gtk::VBox());
                 GtkWidget* vte_widget = vte_terminal_new();
                 Gtk::Widget* terminal_widget = Glib::wrap(vte_widget);
@@ -1216,7 +1256,6 @@ int main(int argc, char* argv[]) {
                     std::cerr << "Error: Failed to append new terminal tab." << std::endl;
                     return;
                 }
-                struct TerminalData { Gtk::Notebook* notebook; int page_num; };
                 TerminalData* data = new TerminalData{&notebook, page_num};
                 notebook.set_current_page(data->page_num);
                 notebook.show_all();
@@ -1229,29 +1268,73 @@ int main(int argc, char* argv[]) {
                 };
                 g_idle_add(focus_terminal, vte_widget);
                 vte_terminal_set_input_enabled(VTE_TERMINAL(vte_widget), TRUE);
-                auto child_watch_callback = [](GPid pid, gint status, gpointer user_data) {
-                    TerminalData* term_data = static_cast<TerminalData*>(user_data);
-                    auto idle_callback = [](gpointer inner_data) -> gboolean {
-                        TerminalData* t_data = static_cast<TerminalData*>(inner_data);
-                        if (t_data->notebook->get_n_pages() > t_data->page_num) {
-                            t_data->notebook->remove_page(t_data->page_num);
+
+                std::vector<char*> argv_vec;
+                std::vector<std::string> command_args_str;
+
+                if (connection_type_str == "SSH") {
+                    ConnectionInfo conn_info;
+                    conn_info.id = static_cast<Glib::ustring>((*iter)[connection_columns.id]);
+                    conn_info.name = connection_name;
+                    conn_info.host = static_cast<Glib::ustring>((*iter)[connection_columns.host]);
+                    Glib::ustring port_ustr = (*iter)[connection_columns.port];
+                    if (!port_ustr.empty()) {
+                        try {
+                            conn_info.port = std::stoi(port_ustr.raw());
+                        } catch (const std::exception& e) {
+                            conn_info.port = 0;
+                            std::cerr << "Error converting port for SSH: " << port_ustr.raw() << " - " << e.what() << std::endl;
                         }
-                        delete t_data;
-                        return FALSE;
-                    };
-                    g_idle_add(idle_callback, term_data);
-                    g_spawn_close_pid(pid);
-                };
-                const char* argv[] = {"/bin/bash", nullptr};
+                    } else {
+                        conn_info.port = 0;
+                    }
+                    conn_info.username = static_cast<Glib::ustring>((*iter)[connection_columns.username]);
+                    conn_info.connection_type = connection_type_str;
+
+                    std::vector<std::string> ssh_command_parts = Ssh::generate_ssh_command_args(conn_info);
+                    std::string full_ssh_command_str;
+                    for (size_t i = 0; i < ssh_command_parts.size(); ++i) {
+                        full_ssh_command_str += ssh_command_parts[i];
+                        if (i < ssh_command_parts.size() - 1) {
+                            full_ssh_command_str += " "; // Add spaces between parts
+                        }
+                    }
+
+                    full_ssh_command_str += "; read -p \'[ngTerm] SSH session ended. Press any key to close this tab...\' -n 1 -s";
+
+                    command_args_str.clear();
+                    command_args_str.push_back("/bin/bash");
+                    command_args_str.push_back("-c");
+                    command_args_str.push_back(full_ssh_command_str); // Pass the full ssh command as a single quoted argument to -c
+                } else { // Non-SSH connection type
+                    command_args_str.clear();
+                    command_args_str.push_back("/bin/bash");
+                }
+
+                for (const std::string& s : command_args_str) {
+                    argv_vec.push_back(const_cast<char*>(s.c_str()));
+                }
+                argv_vec.push_back(nullptr);
+
+                const char** argv = const_cast<const char**>(argv_vec.data());
+
                 GError* error = nullptr;
                 GPid child_pid;
-                vte_terminal_spawn_sync(VTE_TERMINAL(vte_widget), VTE_PTY_DEFAULT, nullptr, const_cast<char**>(argv), nullptr, G_SPAWN_DEFAULT, nullptr, nullptr, &child_pid, nullptr, &error);
+                vte_terminal_spawn_sync(VTE_TERMINAL(vte_widget), VTE_PTY_DEFAULT, nullptr, (char**)argv , nullptr, G_SPAWN_DEFAULT, nullptr, nullptr, &child_pid, nullptr, &error);
+
                 if (error) {
                     std::cerr << "Error spawning terminal: " << error->message << std::endl;
                     g_error_free(error);
+                    // If spawn fails, remove the tab that was optimistically added
+                    if (notebook.get_n_pages() > page_num && notebook.get_nth_page(page_num) == terminal_box) {
+                         notebook.remove_page(page_num);
+                    }
+                    delete data; // Clean up TerminalData
+                } else {
+                    // vte_terminal_watch_child(VTE_TERMINAL(vte_widget), child_pid); // VTE's own watch
+                    // Connect to VTE's child-exited signal using g_signal_connect
+                    g_signal_connect(vte_widget, "child-exited", G_CALLBACK(on_terminal_child_exited), data);
                 }
-                vte_terminal_watch_child(VTE_TERMINAL(vte_widget), child_pid);
-                g_child_watch_add(child_pid, child_watch_callback, data);
             }
         }
     });
