@@ -16,63 +16,17 @@
 #include <gtkmm/toolbar.h>  // For Gtk::Toolbar
 #include <gtkmm/toolbutton.h> // For Gtk::ToolButton
 #include <gdkmm/pixbuf.h>   // For Gdk::Pixbuf for icons
+#include "TreeModelColumns.h" // Include the new header for ConnectionColumns
 
 #include "Connections.h"
+#include "Folders.h"
 
 using json = nlohmann::json;
 
-// Define custom columns for the TreeView
-struct ConnectionColumns : public Gtk::TreeModel::ColumnRecord {
-    ConnectionColumns() {
-        add(name);
-        add(id);
-        add(is_folder);
-        add(is_connection);
-        add(host);
-        add(port);
-        add(username);
-        add(connection_type);
-        add(parent_id_col); // Add parent_id_col here
-    }
-    Gtk::TreeModelColumn<Glib::ustring> name;   // Name of folder or connection
-    Gtk::TreeModelColumn<Glib::ustring> id;     // Folder or connection ID
-    Gtk::TreeModelColumn<bool> is_folder;       // True if it's a folder
-    Gtk::TreeModelColumn<bool> is_connection;   // True if it's a connection
-    Gtk::TreeModelColumn<Glib::ustring> host;   // Hostname or IP address
-    Gtk::TreeModelColumn<Glib::ustring> port;   // Port number (stored as string)
-    Gtk::TreeModelColumn<Glib::ustring> username; // Username
-    Gtk::TreeModelColumn<Glib::ustring> connection_type; // Connection type (e.g., SSH, Telnet)
-    Gtk::TreeModelColumn<Glib::ustring> parent_id_col; // Parent ID (for folders and connections)
-};
-
-// Function prototypes to allow cross-referencing
-void build_menu(Gtk::MenuBar& menubar, Gtk::Notebook& notebook, Gtk::TreeView& connections_treeview,
-                Glib::RefPtr<Gtk::TreeStore>& connections_liststore, ConnectionColumns& columns);
-void build_leftFrame(Gtk::Frame& left_frame, Gtk::ScrolledWindow& left_scrolled_window,
-                    Gtk::TreeView& connections_treeview,
-                    Glib::RefPtr<Gtk::TreeStore>& connections_liststore,
-                    ConnectionColumns& columns, Gtk::Notebook& notebook);
-void build_rightFrame(Gtk::Notebook& notebook);
-
-// Forward declaration for the new population function
-void populate_connections_treeview(Glib::RefPtr<Gtk::TreeStore>& liststore, ConnectionColumns& cols, Gtk::TreeView& treeview);
-
-// Forward declaration for the selection handler
-void on_connection_selection_changed();
-
-// Forward declaration for the edit connection handler
-void on_edit_connection_activate();
-
-// Forward declaration for the add folder handler
-void on_add_folder_activated();
-
-// Forward declaration for the add connection handler
-void on_add_connection_activated(Gtk::Notebook& notebook);
-
 // Global TreeView, Model, and Columns
 Gtk::TreeView* connections_treeview = nullptr;
-ConnectionColumns connection_columns;          // Stays as object
 Glib::RefPtr<Gtk::TreeStore> connections_liststore; // Stays as RefPtr
+ConnectionColumns connection_columns; // Use the custom ConnectionColumns struct
 
 // Global UI elements for Info Panel
 Gtk::Frame* info_frame = nullptr;
@@ -152,115 +106,6 @@ void on_connection_selection_changed() {
     }
     if (delete_connection_menu_item_toolbar) {
         delete_connection_menu_item_toolbar->set_sensitive(is_connection_selected);
-    }
-}
-
-// Function to handle editing a folder
-void on_edit_folder_activate() {
-    if (!connections_treeview || !connections_liststore || !edit_folder_menu_item) return;
-
-    Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview->get_selection();
-    Gtk::TreeModel::iterator iter = selection->get_selected();
-
-    if (!iter) {
-        Gtk::MessageDialog warning_dialog("No Folder Selected", false, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_OK, true);
-        warning_dialog.set_secondary_text("Please select a folder to edit.");
-        warning_dialog.run();
-        return;
-    }
-
-    Gtk::TreeModel::Row row = *iter;
-    if (!row[connection_columns.is_folder]) {
-        Gtk::MessageDialog warning_dialog("Not a Folder", false, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_OK, true);
-        warning_dialog.set_secondary_text("The selected item is not a folder.");
-        warning_dialog.run();
-        return;
-    }
-
-    FolderInfo current_folder;
-    current_folder.id = static_cast<Glib::ustring>(row[connection_columns.id]);
-    current_folder.name = static_cast<Glib::ustring>(row[connection_columns.name]);
-    current_folder.parent_id = static_cast<Glib::ustring>(row[connection_columns.parent_id_col]);
-
-    Gtk::Dialog dialog("Edit Folder", true /* modal */);
-    dialog.set_default_size(350, 200); // Adjusted size for new field
-
-    Gtk::Grid* grid = Gtk::manage(new Gtk::Grid());
-    grid->set_border_width(10);
-    grid->set_column_spacing(10);
-    grid->set_row_spacing(10);
-    dialog.get_content_area()->pack_start(*grid, Gtk::PACK_EXPAND_WIDGET);
-
-    // Folder Name
-    Gtk::Label name_label("Folder Name:");
-    name_label.set_halign(Gtk::ALIGN_START);
-    Gtk::Entry name_entry;
-    name_entry.set_hexpand(true);
-    name_entry.set_text(current_folder.name); // Pre-fill current name
-
-    // Parent Folder selection (ComboBoxText)
-    Gtk::Label parent_folder_label("Parent Folder:");
-    parent_folder_label.set_halign(Gtk::ALIGN_START);
-    Gtk::ComboBoxText parent_folder_combo;
-    parent_folder_combo.set_hexpand(true);
-    std::vector<FolderInfo> all_folders = ConnectionManager::load_folders();
-    parent_folder_combo.append("", "None (Root Level)"); // ID, Text for root
-    int parent_folder_active_idx = 0;
-    int current_combo_idx = 1; // Start after "None"
-    for (const auto& folder_item : all_folders) {
-        if (folder_item.id == current_folder.id) {
-            continue; // Don't allow a folder to be its own parent
-        }
-        parent_folder_combo.append(folder_item.id, folder_item.name);
-        if (folder_item.id == current_folder.parent_id) {
-            parent_folder_active_idx = current_combo_idx;
-        }
-        current_combo_idx++;
-    }
-    parent_folder_combo.set_active(parent_folder_active_idx);
-
-    // Attach to grid
-    grid->attach(name_label, 0, 0, 1, 1);
-    grid->attach(name_entry, 1, 0, 1, 1);
-    grid->attach(parent_folder_label, 0, 1, 1, 1);
-    grid->attach(parent_folder_combo, 1, 1, 1, 1);
-
-    dialog.add_button("_Cancel", Gtk::RESPONSE_CANCEL);
-    Gtk::Button* save_button = dialog.add_button("_Save", Gtk::RESPONSE_OK);
-    save_button->get_style_context()->add_class("suggested-action");
-
-    dialog.show_all();
-    int response = dialog.run();
-
-    if (response == Gtk::RESPONSE_OK) {
-        std::string new_folder_name = name_entry.get_text();
-        if (new_folder_name.empty()) {
-            Gtk::MessageDialog warning_dialog(dialog, "Folder Name Empty", false, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_OK, true);
-            warning_dialog.set_secondary_text("Folder name cannot be empty.");
-            warning_dialog.run();
-            return;
-        }
-
-        FolderInfo updated_folder = current_folder; // Copy ID
-        updated_folder.name = new_folder_name;
-        updated_folder.parent_id = parent_folder_combo.get_active_id(); // Get new parent ID
-
-        // Basic circular dependency check: a folder cannot become a child of itself.
-        // More complex checks (e.g. child of its own descendant) are harder here.
-        if (updated_folder.id == updated_folder.parent_id) {
-            Gtk::MessageDialog error_dialog(dialog, "Invalid Parent", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
-            error_dialog.set_secondary_text("A folder cannot be its own parent.");
-            error_dialog.run();
-            return;
-        }
-
-        if (ConnectionManager::save_folder(updated_folder)) {
-            populate_connections_treeview(connections_liststore, connection_columns, *connections_treeview);
-        } else {
-            Gtk::MessageDialog error_dialog(dialog, "Save Failed", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
-            error_dialog.set_secondary_text("Could not update the folder.");
-            error_dialog.run();
-        }
     }
 }
 
@@ -452,79 +297,6 @@ void on_edit_connection_activate() {
     }
 }
 
-// Function to handle adding a new folder
-void on_add_folder_activated() {
-    Gtk::Dialog dialog("Add New Folder", true /* modal */);
-    dialog.set_default_size(350, 200); // Adjusted size
-
-    Gtk::Grid* grid = Gtk::manage(new Gtk::Grid());
-    grid->set_border_width(10);
-    grid->set_column_spacing(10);
-    grid->set_row_spacing(10);
-    dialog.get_content_area()->pack_start(*grid, Gtk::PACK_EXPAND_WIDGET);
-
-    // Folder Name
-    Gtk::Label name_label("Folder Name:");
-    name_label.set_halign(Gtk::ALIGN_START);
-    Gtk::Entry name_entry;
-    name_entry.set_hexpand(true);
-
-    // Parent Folder
-    Gtk::Label parent_label("Parent Folder:");
-    parent_label.set_halign(Gtk::ALIGN_START);
-    Gtk::ComboBoxText parent_combo;
-    parent_combo.set_hexpand(true);
-    parent_combo.append("", "(Root Level)"); // ID, Text. Empty ID for root.
-
-    // Populate parent_combo with existing folders
-    std::vector<FolderInfo> existing_folders = ConnectionManager::load_folders();
-    for (const auto& folder : existing_folders) {
-        parent_combo.append(folder.id, folder.name);
-    }
-    parent_combo.set_active(0); // Default to (Root Level)
-
-    // Attach to grid
-    grid->attach(name_label,   0, 0, 1, 1);
-    grid->attach(name_entry,   1, 0, 1, 1);
-    grid->attach(parent_label, 0, 1, 1, 1);
-    grid->attach(parent_combo, 1, 1, 1, 1);
-
-    dialog.add_button("_Cancel", Gtk::RESPONSE_CANCEL);
-    dialog.add_button("_Save", Gtk::RESPONSE_OK);
-    dialog.show_all();
-
-    int response = dialog.run();
-    if (response == Gtk::RESPONSE_OK) {
-        std::string folder_name = name_entry.get_text();
-        std::string parent_id = parent_combo.get_active_id();
-
-        if (folder_name.empty()) {
-            Gtk::MessageDialog warning_dialog("Folder Name Empty", false, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_OK, true);
-            warning_dialog.set_secondary_text("Folder name cannot be empty.");
-            warning_dialog.run();
-            return;
-        }
-
-        FolderInfo new_folder;
-        uuid_t uuid; // libuuid type
-        uuid_generate_random(uuid); // Generate a random UUID
-        char uuid_str[37]; // Buffer for string representation (36 chars + null)
-        uuid_unparse_lower(uuid, uuid_str); // Convert to string
-        new_folder.id = uuid_str; // Assign to FolderInfo
-
-        new_folder.name = folder_name;
-        new_folder.parent_id = parent_id;
-
-        if (ConnectionManager::save_folder(new_folder)) {
-            populate_connections_treeview(connections_liststore, connection_columns, *connections_treeview);
-        } else {
-            Gtk::MessageDialog error_dialog("Save Failed", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
-            error_dialog.set_secondary_text("Could not save the new folder.");
-            error_dialog.run();
-        }
-    }
-}
-
 // Function to handle adding a new connection
 void on_add_connection_activated(Gtk::Notebook& notebook) {
     Gtk::Dialog dialog("Add New Connection", true /* modal */);
@@ -608,15 +380,10 @@ void on_add_connection_activated(Gtk::Notebook& notebook) {
         std::string selected_type = type_combo.get_active_text();
         std::string current_port = port_entry.get_text();
         if (current_port.empty()) {
-            if (selected_type == "SSH") {
-                port_entry.set_text("22");
-            } else if (selected_type == "Telnet") {
-                port_entry.set_text("23");
-            } else if (selected_type == "VNC") {
-                port_entry.set_text("5900");
-            } else if (selected_type == "RDP") {
-                port_entry.set_text("3389");
-            }
+            if (selected_type == "SSH") port_entry.set_text("22");
+            else if (selected_type == "Telnet") port_entry.set_text("23");
+            else if (selected_type == "VNC") port_entry.set_text("5900");
+            else if (selected_type == "RDP") port_entry.set_text("3389");
         }
     });
     // Trigger it once to set default port for SSH if port is empty
@@ -818,46 +585,51 @@ void save_config(const json& config) {
 }
 
 // Function to build the menu
-void build_menu(Gtk::MenuBar& menubar, Gtk::Notebook& notebook, Gtk::TreeView& connections_treeview_ref,
-                Glib::RefPtr<Gtk::TreeStore>& liststore_ref, ConnectionColumns& columns_ref) {
-    // Create Options menu (formerly File menu)
-    Gtk::Menu* options_submenu = Gtk::manage(new Gtk::Menu());
-    Gtk::MenuItem* options_menu_item = Gtk::manage(new Gtk::MenuItem("_Options", true)); // Renamed
-    options_menu_item->set_submenu(*options_submenu);
+void build_menu(Gtk::Window& parent_window, Gtk::MenuBar& menubar, Gtk::Notebook& notebook, Gtk::TreeView& connections_treeview_ref,
+                Glib::RefPtr<Gtk::TreeStore>& liststore_ref, ConnectionColumns& columns_ref) { // Changed to ConnectionColumns
+    // Create "Options" menu (formerly "File" menu, renamed and repurposed)
+    Gtk::Menu* connections_submenu = Gtk::manage(new Gtk::Menu());
+    Gtk::MenuItem* connections_menu_item = Gtk::manage(new Gtk::MenuItem("Options", true)); // Renamed, changed from _Connections
+    connections_menu_item->set_submenu(*connections_submenu);
 
-    // Items from former Settings menu - now in Options
+    // Items from former Settings menu - now in Connections
     Gtk::MenuItem* add_folder_item = Gtk::manage(new Gtk::MenuItem("Add Folder"));
     Gtk::MenuItem* add_connection_item = Gtk::manage(new Gtk::MenuItem("Add Connection"));
     Gtk::MenuItem* delete_connection_item = Gtk::manage(new Gtk::MenuItem("Delete Connection"));
     Gtk::SeparatorMenuItem* separator1 = Gtk::manage(new Gtk::SeparatorMenuItem());
     Gtk::MenuItem* preferences_item = Gtk::manage(new Gtk::MenuItem("Preferences"));
 
-    options_submenu->append(*add_folder_item);
-    edit_folder_menu_item = Gtk::manage(new Gtk::MenuItem("Edit _Folder...")); // Adjusted mnemonic
-    edit_folder_menu_item->signal_activate().connect(sigc::ptr_fun(&on_edit_folder_activate));
-    edit_folder_menu_item->set_sensitive(false); // Initially disabled
-    options_submenu->append(*edit_folder_menu_item);
+    connections_submenu->append(*add_folder_item);
+    edit_folder_menu_item = Gtk::manage(new Gtk::MenuItem("Edit Folder")); // Changed text for clarity, removed underscore
+    edit_folder_menu_item->signal_activate().connect([&parent_window, &connections_treeview_ref, &liststore_ref, &columns_ref]() {
+        FolderOps::edit_folder(parent_window, connections_treeview_ref, liststore_ref, columns_ref);
+    });
+    connections_submenu->append(*edit_folder_menu_item);
 
-    options_submenu->append(*add_connection_item);
-    edit_connection_menu_item = Gtk::manage(new Gtk::MenuItem("Edit _Connection...")); // Adjusted mnemonic
+    // Declare and append Delete Folder item
+    Gtk::MenuItem* delete_folder_item = Gtk::manage(new Gtk::MenuItem("Delete Folder")); // Removed underscore and fixed typo
+    connections_submenu->append(*delete_folder_item);
+
+    connections_submenu->append(*add_connection_item);
+    edit_connection_menu_item = Gtk::manage(new Gtk::MenuItem("Edit Connection", true)); // Changed from _Connection
     edit_connection_menu_item->signal_activate().connect(sigc::ptr_fun(&on_edit_connection_activate)); // Connect to handler
     edit_connection_menu_item->set_sensitive(false); // Initially disabled
-    options_submenu->append(*edit_connection_menu_item);
+    connections_submenu->append(*edit_connection_menu_item);
 
-    options_submenu->append(*delete_connection_item);
-    options_submenu->append(*separator1);
-    options_submenu->append(*preferences_item);
+    connections_submenu->append(*delete_connection_item);
+    connections_submenu->append(*separator1);
+    connections_submenu->append(*preferences_item);
 
     // Separator before Exit
     Gtk::SeparatorMenuItem* separator2 = Gtk::manage(new Gtk::SeparatorMenuItem());
-    options_submenu->append(*separator2);
+    connections_submenu->append(*separator2);
 
     // Exit item (from former File menu)
     Gtk::MenuItem* exit_item = Gtk::manage(new Gtk::MenuItem("_Exit", true));
     exit_item->signal_activate().connect([](){
         gtk_main_quit();
     });
-    options_submenu->append(*exit_item);
+    connections_submenu->append(*exit_item);
 
     // Create Help menu (remains the same)
     Gtk::MenuItem* help_menu_item = Gtk::manage(new Gtk::MenuItem("Help"));
@@ -866,19 +638,28 @@ void build_menu(Gtk::MenuBar& menubar, Gtk::Notebook& notebook, Gtk::TreeView& c
     Gtk::MenuItem* about_item = Gtk::manage(new Gtk::MenuItem("About"));
     help_submenu->append(*about_item);
 
-    // Add menus to menubar (only Options and Help)
-    menubar.append(*options_menu_item);
+    // Add menus to menubar (only Connections and Help)
+    menubar.append(*connections_menu_item);
     menubar.append(*help_menu_item);
 
     // Connect menu item handlers (signal_activate calls remain the same,
     // as the Gtk::MenuItem* variables are still valid)
+    add_folder_item->signal_activate().connect([&parent_window, &connections_treeview_ref, &liststore_ref, &columns_ref]() {
+        FolderOps::add_folder(parent_window, connections_treeview_ref, liststore_ref, columns_ref);
+    });
+
+    // Connect delete_folder_item to FolderOps::delete_folder
+    delete_folder_item->signal_activate().connect([&parent_window, &connections_treeview_ref, &liststore_ref, &columns_ref]() {
+        FolderOps::delete_folder(parent_window, connections_treeview_ref, liststore_ref, columns_ref);
+    });
+
     add_connection_item->signal_activate().connect(sigc::bind(sigc::ptr_fun(&on_add_connection_activated), std::ref(notebook)));
-    add_folder_item->signal_activate().connect(sigc::ptr_fun(&on_add_folder_activated));
-    delete_connection_item->signal_activate().connect([&connections_treeview_ref, &liststore_ref, &columns_ref]() {
-        Gtk::TreeModel::iterator iter = connections_treeview_ref.get_selection()->get_selected();
+    delete_connection_item->signal_activate().connect([&connections_treeview_ref, &liststore_ref, &columns_ref, &parent_window]() { // Added parent_window capture
+        Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview_ref.get_selection();
+        Gtk::TreeModel::iterator iter = selection->get_selected();
 
         if (!iter) {
-            Gtk::MessageDialog warning_dialog("No Selection", false, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_OK, true);
+            Gtk::MessageDialog warning_dialog(parent_window, "No Selection", false, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_OK, true);
             warning_dialog.set_secondary_text("Please select a connection to delete.");
             warning_dialog.run();
             return;
@@ -886,8 +667,8 @@ void build_menu(Gtk::MenuBar& menubar, Gtk::Notebook& notebook, Gtk::TreeView& c
 
         bool is_folder = (*iter)[columns_ref.is_folder];
         if (is_folder) {
-            Gtk::MessageDialog warning_dialog("Cannot Delete Folder", false, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_OK, true);
-            warning_dialog.set_secondary_text("This option is for deleting connections only. Please select a connection item.");
+            Gtk::MessageDialog warning_dialog(parent_window, "Cannot Delete Folder Here", false, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_OK, true);
+            warning_dialog.set_secondary_text("This option is for deleting connections. To delete a folder, use the dedicated 'Delete Folder' option.");
             warning_dialog.run();
             return;
         }
@@ -895,7 +676,7 @@ void build_menu(Gtk::MenuBar& menubar, Gtk::Notebook& notebook, Gtk::TreeView& c
         Glib::ustring connection_name = static_cast<Glib::ustring>((*iter)[columns_ref.name]);
         Glib::ustring connection_id = static_cast<Glib::ustring>((*iter)[columns_ref.id]);
 
-        Gtk::MessageDialog confirm_dialog("Confirm Delete", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_YES_NO, true);
+        Gtk::MessageDialog confirm_dialog(parent_window, "Confirm Delete", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_YES_NO, true);
         confirm_dialog.set_secondary_text("Are you sure you want to delete the connection: '" + connection_name + "'?");
         int response = confirm_dialog.run();
 
@@ -903,7 +684,7 @@ void build_menu(Gtk::MenuBar& menubar, Gtk::Notebook& notebook, Gtk::TreeView& c
             if (ConnectionManager::delete_connection(connection_id)) {
                 populate_connections_treeview(liststore_ref, columns_ref, connections_treeview_ref);
             } else {
-                Gtk::MessageDialog error_dialog("Delete Failed", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
+                Gtk::MessageDialog error_dialog(parent_window, "Delete Failed", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
                 error_dialog.set_secondary_text("Could not delete the connection: '" + connection_name + "'.");
                 error_dialog.run();
             }
@@ -931,11 +712,10 @@ void build_menu(Gtk::MenuBar& menubar, Gtk::Notebook& notebook, Gtk::TreeView& c
 }
 
 // Function to build the left frame
-void build_leftFrame(Gtk::Frame& left_frame, Gtk::ScrolledWindow& left_scrolled_window,
+void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::ScrolledWindow& left_scrolled_window,
                     Gtk::TreeView& connections_treeview_ref, // Renamed to avoid conflict
                     Glib::RefPtr<Gtk::TreeStore>& connections_liststore_ref, // Renamed
-                    ConnectionColumns& columns_ref, Gtk::Notebook& notebook) { // Added notebook
-
+                    ConnectionColumns& columns_ref, Gtk::Notebook& notebook) { // Added notebook and changed to ConnectionColumns
     // Assign global pointers
     connections_treeview = &connections_treeview_ref;
     connections_liststore = connections_liststore_ref;
@@ -964,7 +744,9 @@ void build_leftFrame(Gtk::Frame& left_frame, Gtk::ScrolledWindow& left_scrolled_
     add_folder_button->set_margin_end(1);
     add_folder_button->set_margin_top(0);
     add_folder_button->set_margin_bottom(0);
-    add_folder_button->signal_clicked().connect(sigc::ptr_fun(&on_add_folder_activated));
+    add_folder_button->signal_clicked().connect([&parent_window, &connections_treeview_ref, &connections_liststore_ref, &columns_ref]() {
+        FolderOps::add_folder(parent_window, connections_treeview_ref, connections_liststore_ref, columns_ref);
+    });
     toolbar->append(*add_folder_button);
 
     // Edit Folder Button
@@ -976,7 +758,9 @@ void build_leftFrame(Gtk::Frame& left_frame, Gtk::ScrolledWindow& left_scrolled_
     edit_folder_button->set_margin_end(1);
     edit_folder_button->set_margin_top(0);
     edit_folder_button->set_margin_bottom(0);
-    edit_folder_button->signal_clicked().connect(sigc::ptr_fun(&on_edit_folder_activate));
+    edit_folder_button->signal_clicked().connect([&parent_window, &connections_treeview_ref, &connections_liststore_ref, &columns_ref]() {
+        FolderOps::edit_folder(parent_window, connections_treeview_ref, connections_liststore_ref, columns_ref);
+    });
     edit_folder_menu_item_toolbar = edit_folder_button; // Assign to global pointer
     toolbar->append(*edit_folder_button);
 
@@ -989,39 +773,8 @@ void build_leftFrame(Gtk::Frame& left_frame, Gtk::ScrolledWindow& left_scrolled_
     delete_folder_button->set_margin_end(1);
     delete_folder_button->set_margin_top(0);
     delete_folder_button->set_margin_bottom(0);
-    delete_folder_button->signal_clicked().connect([&connections_treeview_ref, &connections_liststore_ref, &columns_ref]() {
-        if (!connections_treeview) return;
-        Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview->get_selection();
-        if (selection) {
-            Gtk::TreeModel::iterator iter = selection->get_selected();
-            if (iter) {
-                Gtk::TreeModel::Row row = *iter;
-                if (row[columns_ref.is_folder]) {
-                    std::string folder_id = static_cast<Glib::ustring>(row[columns_ref.id]);
-                    std::string folder_name = static_cast<Glib::ustring>(row[columns_ref.name]);
-
-                    Gtk::MessageDialog confirmation_dialog("Delete Folder", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_YES_NO, true);
-                    confirmation_dialog.set_secondary_text("Are you sure you want to delete the folder '" + folder_name + "' and all its contents?");
-                    if (confirmation_dialog.run() == Gtk::RESPONSE_YES) {
-                        if (ConnectionManager::delete_folder(folder_id)) { // Assuming delete_folder handles recursion or this is intended for a single folder
-                            populate_connections_treeview(connections_liststore_ref, columns_ref, connections_treeview_ref);
-                        } else {
-                            Gtk::MessageDialog error_dialog("Error", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
-                            error_dialog.set_secondary_text("Could not delete the folder '" + folder_name + "'.");
-                            error_dialog.run();
-                        }
-                    }
-                } else {
-                    Gtk::MessageDialog info_dialog("Not a Folder", false, Gtk::MESSAGE_INFO, Gtk::BUTTONS_OK, true);
-                    info_dialog.set_secondary_text("Please select a folder to delete.");
-                    info_dialog.run();
-                }
-            } else {
-                 Gtk::MessageDialog info_dialog("No Selection", false, Gtk::MESSAGE_INFO, Gtk::BUTTONS_OK, true);
-                 info_dialog.set_secondary_text("Please select an item to delete.");
-                 info_dialog.run();
-            }
-        }
+    delete_folder_button->signal_clicked().connect([&parent_window, &connections_treeview_ref, &connections_liststore_ref, &columns_ref]() {
+        FolderOps::delete_folder(parent_window, connections_treeview_ref, connections_liststore_ref, columns_ref);
     });
     delete_folder_menu_item_toolbar = delete_folder_button; // Assign to global pointer
     toolbar->append(*delete_folder_button);
@@ -1060,35 +813,35 @@ void build_leftFrame(Gtk::Frame& left_frame, Gtk::ScrolledWindow& left_scrolled_
     delete_conn_button->set_margin_end(1);
     delete_conn_button->set_margin_top(0);
     delete_conn_button->set_margin_bottom(0);
-    delete_conn_button->signal_clicked().connect([&connections_treeview_ref, &connections_liststore_ref, &columns_ref]() {
-        if (!connections_treeview) return;
-        Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview->get_selection();
+    delete_conn_button->signal_clicked().connect([&connections_treeview_ref, &connections_liststore_ref, &columns_ref, &parent_window]() {
+        if (!connections_treeview) return; // Ensure global connections_treeview is used or capture local ref
+        Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview_ref.get_selection();
         if (selection) {
             Gtk::TreeModel::iterator iter = selection->get_selected();
             if (iter) {
-                Gtk::TreeModel::Row row = *iter;
-                if (row[columns_ref.is_connection]) {
-                    std::string conn_id = static_cast<Glib::ustring>(row[columns_ref.id]);
-                    std::string conn_name = static_cast<Glib::ustring>(row[columns_ref.name]);
+                bool is_connection = (*iter)[columns_ref.is_connection];
+                if (is_connection) {
+                    Glib::ustring conn_id = static_cast<Glib::ustring>((*iter)[columns_ref.id]);
+                    Glib::ustring conn_name = static_cast<Glib::ustring>((*iter)[columns_ref.name]);
 
-                    Gtk::MessageDialog confirmation_dialog("Delete Connection", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_YES_NO, true);
+                    Gtk::MessageDialog confirmation_dialog(parent_window, "Delete Connection", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_YES_NO, true);
                     confirmation_dialog.set_secondary_text("Are you sure you want to delete the connection '" + conn_name + "'?");
                     if (confirmation_dialog.run() == Gtk::RESPONSE_YES) {
                         if (ConnectionManager::delete_connection(conn_id)) {
                             populate_connections_treeview(connections_liststore_ref, columns_ref, connections_treeview_ref);
                         } else {
-                            Gtk::MessageDialog error_dialog("Error", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
+                            Gtk::MessageDialog error_dialog(parent_window, "Error", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
                             error_dialog.set_secondary_text("Could not delete the connection '" + conn_name + "'.");
                             error_dialog.run();
                         }
                     }
                 } else {
-                    Gtk::MessageDialog info_dialog("Not a Connection", false, Gtk::MESSAGE_INFO, Gtk::BUTTONS_OK, true);
+                    Gtk::MessageDialog info_dialog(parent_window, "Not a Connection", false, Gtk::MESSAGE_INFO, Gtk::BUTTONS_OK, true);
                     info_dialog.set_secondary_text("Please select a connection to delete.");
                     info_dialog.run();
                 }
             } else {
-                 Gtk::MessageDialog info_dialog("No Selection", false, Gtk::MESSAGE_INFO, Gtk::BUTTONS_OK, true);
+                 Gtk::MessageDialog info_dialog(parent_window, "No Selection", false, Gtk::MESSAGE_INFO, Gtk::BUTTONS_OK, true);
                  info_dialog.set_secondary_text("Please select an item to delete.");
                  info_dialog.run();
             }
@@ -1333,7 +1086,7 @@ int main(int argc, char* argv[]) {
     connections_liststore = Gtk::TreeStore::create(connection_columns);
     connections_treeview->set_model(connections_liststore); // Use ->
 
-    build_menu(menubar, notebook, *connections_treeview, connections_liststore, connection_columns); // Dereference connections_treeview
+    build_menu(window, menubar, notebook, *connections_treeview, connections_liststore, connection_columns); // Dereference connections_treeview
 
     // Pack MenuBar at the TOP of the main_vbox
     main_vbox.pack_start(menubar, false, false, 0);
@@ -1353,7 +1106,7 @@ int main(int argc, char* argv[]) {
 
     // Call build_leftFrame to populate left_frame_for_toolbar_and_treeview
     // It will add connections_scrolled_window (containing the treeview) and the toolbar to this frame.
-    build_leftFrame(left_frame_for_toolbar_and_treeview, connections_scrolled_window,
+    build_leftFrame(window, left_frame_for_toolbar_and_treeview, connections_scrolled_window,
                     *connections_treeview, connections_liststore, connection_columns, notebook);
 
     // Add the populated frame (which now contains the toolbar and treeview) to the left_pane_vbox
@@ -1424,115 +1177,60 @@ int main(int argc, char* argv[]) {
             // Access connection_columns directly as it's a global object (not pointer)
             bool is_folder = (*iter)[connection_columns.is_folder];
             if (is_folder) {
-                // If it's a folder, do nothing on double-click for now
-                return;
+                return; // Do nothing if a folder is double-clicked
             }
 
-            // If it's a connection, proceed to open a new terminal tab
             bool is_connection = (*iter)[connection_columns.is_connection];
             if (is_connection) {
-                // Get the connection name
                 Glib::ustring connection_name = static_cast<Glib::ustring>((*iter)[connection_columns.name]);
-
-                // Create a new terminal tab
                 Gtk::VBox* terminal_box = Gtk::manage(new Gtk::VBox());
-
-                // Create VTE terminal widget
                 GtkWidget* vte_widget = vte_terminal_new();
                 Gtk::Widget* terminal_widget = Glib::wrap(vte_widget);
                 terminal_box->pack_start(*terminal_widget);
-                terminal_widget->show(); // Explicitly show the VTE widget
-
-                // Create a label to the notebook tab
+                terminal_widget->show();
                 Gtk::Label* tab_label = Gtk::manage(new Gtk::Label(connection_name));
-                tab_label->show(); // Explicitly show the tab label
-
-                terminal_box->show(); // Explicitly show the page content (VBox)
-
-                // Append the new page and get its number
+                tab_label->show();
+                terminal_box->show();
                 int page_num = notebook.append_page(*terminal_box, *tab_label);
-
-                // Check if appending the page was successful
                 if (page_num == -1) {
                     std::cerr << "Error: Failed to append new terminal tab." << std::endl;
-                    return; // Exit the lambda if page append failed
+                    return;
                 }
-
-                // Capture necessary data for child watch
-                struct TerminalData {
-                    Gtk::Notebook* notebook;
-                    int page_num;
-                };
-
+                struct TerminalData { Gtk::Notebook* notebook; int page_num; };
                 TerminalData* data = new TerminalData{&notebook, page_num};
-
-                notebook.set_current_page(data->page_num); // Set the new tab as current
-                notebook.show_all(); // Ensure tab visibility before VTE focus
-
-                // Static function to set focus
-                static auto focus_terminal = [](gpointer data) -> gboolean {
-                    GtkWidget* widget = GTK_WIDGET(data);
-                    // Check if widget is valid, realized, visible, and sensitive before grabbing focus
+                notebook.set_current_page(data->page_num);
+                notebook.show_all();
+                static auto focus_terminal = [](gpointer vte_data) -> gboolean {
+                    GtkWidget* widget = GTK_WIDGET(vte_data);
                     if (widget && gtk_widget_get_realized(widget) && gtk_widget_get_visible(widget) && gtk_widget_is_sensitive(widget)) {
                         gtk_widget_grab_focus(widget);
                     }
-                    return FALSE; // run only once
+                    return FALSE;
                 };
-
-                // Pass the VTE widget to the idle callback
                 g_idle_add(focus_terminal, vte_widget);
-
                 vte_terminal_set_input_enabled(VTE_TERMINAL(vte_widget), TRUE);
-
-                // Static callback function
                 auto child_watch_callback = [](GPid pid, gint status, gpointer user_data) {
-                    TerminalData* data = static_cast<TerminalData*>(user_data);
-
-                    // Use g_idle_add to safely remove the page from the main thread
-                    auto idle_callback = [](gpointer user_data) -> gboolean {
-                        TerminalData* data = static_cast<TerminalData*>(user_data);
-
-                        // Only remove page if it still exists
-                        if (data->notebook->get_n_pages() > data->page_num) {
-                            data->notebook->remove_page(data->page_num);
+                    TerminalData* term_data = static_cast<TerminalData*>(user_data);
+                    auto idle_callback = [](gpointer inner_data) -> gboolean {
+                        TerminalData* t_data = static_cast<TerminalData*>(inner_data);
+                        if (t_data->notebook->get_n_pages() > t_data->page_num) {
+                            t_data->notebook->remove_page(t_data->page_num);
                         }
-
-                        delete data;
-                        return FALSE; // run only once
+                        delete t_data;
+                        return FALSE;
                     };
-
-                    g_idle_add(idle_callback, data);
+                    g_idle_add(idle_callback, term_data);
                     g_spawn_close_pid(pid);
                 };
-
-                // Spawn a shell in the terminal
                 const char* argv[] = {"/bin/bash", nullptr};
                 GError* error = nullptr;
                 GPid child_pid;
-                vte_terminal_spawn_sync(
-                    VTE_TERMINAL(vte_widget),
-                    VTE_PTY_DEFAULT,
-                    nullptr,  // working directory
-                    const_cast<char**>(argv),
-                    nullptr,  // environment
-                    G_SPAWN_DEFAULT,
-                    nullptr,  // child setup function
-                    nullptr,  // child setup data
-                    &child_pid,  // child pid
-                    nullptr,  // cancellable
-                    &error
-                );
-
-                // Check for spawn errors
+                vte_terminal_spawn_sync(VTE_TERMINAL(vte_widget), VTE_PTY_DEFAULT, nullptr, const_cast<char**>(argv), nullptr, G_SPAWN_DEFAULT, nullptr, nullptr, &child_pid, nullptr, &error);
                 if (error) {
                     std::cerr << "Error spawning terminal: " << error->message << std::endl;
                     g_error_free(error);
                 }
-
-                // Watch the child process using VTE
                 vte_terminal_watch_child(VTE_TERMINAL(vte_widget), child_pid);
-
-                // Add child process exit handler
                 g_child_watch_add(child_pid, child_watch_callback, data);
             }
         }

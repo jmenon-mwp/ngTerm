@@ -205,33 +205,88 @@ bool ConnectionManager::delete_connection(const std::string& connection_id) {
     }
 }
 
+// Private helper function for recursive deletion
+void ConnectionManager::delete_folder_recursive(const std::string& folder_id_to_delete, std::vector<FolderInfo>& all_folders, std::vector<ConnectionInfo>& all_connections) {
+    // First, delete all connections directly inside this folder
+    all_connections.erase(
+        std::remove_if(all_connections.begin(), all_connections.end(),
+                       [&](const ConnectionInfo& conn) {
+                           return conn.folder_id == folder_id_to_delete;
+                       }),
+        all_connections.end()
+    );
+
+    // Find sub-folders
+    std::vector<std::string> sub_folder_ids;
+    for (const auto& folder : all_folders) {
+        if (folder.parent_id == folder_id_to_delete) {
+            sub_folder_ids.push_back(folder.id);
+        }
+    }
+
+    // Recursively delete each sub-folder and its contents
+    for (const auto& sub_folder_id : sub_folder_ids) {
+        delete_folder_recursive(sub_folder_id, all_folders, all_connections); // Recursive call
+    }
+
+    // Finally, remove the current folder itself from the list of all folders
+    all_folders.erase(
+        std::remove_if(all_folders.begin(), all_folders.end(),
+                       [&](const FolderInfo& f) {
+                           return f.id == folder_id_to_delete;
+                       }),
+        all_folders.end()
+    );
+}
+
 bool ConnectionManager::delete_folder(const std::string& folder_id) {
     try {
         std::vector<FolderInfo> folders = load_folders();
+        std::vector<ConnectionInfo> connections = load_connections();
 
-        auto it = std::remove_if(folders.begin(), folders.end(),
-            [&folder_id](const FolderInfo& f) { return f.id == folder_id; });
+        // Check if the target folder actually exists before starting recursive deletion
+        auto it_target_folder = std::find_if(folders.begin(), folders.end(),
+                                         [&folder_id](const FolderInfo& f) { return f.id == folder_id; });
 
-        if (it != folders.end()) {
-            folders.erase(it, folders.end());
-
-            // Write back to file
-            json j_folders = json::array();
-            for (const auto& folder : folders) {
-                j_folders.push_back({
-                    {"id", folder.id},
-                    {"name", folder.name},
-                    {"parent_id", folder.parent_id} // Save parent_id
-                });
-            }
-
-            std::ofstream file(get_folders_file());
-            file << j_folders.dump(4);
-            return true;
+        if (it_target_folder == folders.end()) {
+            // Folder not found, nothing to delete
+            return false;
         }
-        return false;
+
+        // Call the recursive helper to delete the folder and its contents
+        delete_folder_recursive(folder_id, folders, connections);
+
+        // Save the modified folders list
+        json j_folders = json::array();
+        for (const auto& f : folders) {
+            j_folders.push_back({
+                {"id", f.id},
+                {"name", f.name},
+                {"parent_id", f.parent_id}
+            });
+        }
+        std::ofstream folder_file(get_folders_file());
+        folder_file << j_folders.dump(4);
+
+        // Save the modified connections list
+        json j_connections = json::array();
+        for (const auto& conn : connections) {
+            j_connections.push_back({
+                {"id", conn.id},
+                {"name", conn.name},
+                {"host", conn.host},
+                {"port", conn.port},
+                {"username", conn.username},
+                {"folder_id", conn.folder_id},
+                {"connection_type", conn.connection_type}
+            });
+        }
+        std::ofstream conn_file(get_connections_file());
+        conn_file << j_connections.dump(4);
+
+        return true;
     } catch (const std::exception& e) {
-        std::cerr << "Error deleting folder: " << e.what() << std::endl;
+        std::cerr << "Error deleting folder and its contents: " << e.what() << std::endl;
         return false;
     }
 }

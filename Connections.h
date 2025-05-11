@@ -108,4 +108,6 @@ private:
     static std::filesystem::path get_connections_dir();
     static std::filesystem::path get_connections_file();
     static std::filesystem::path get_folders_file();
+    // Helper for recursive folder deletion
+    static void delete_folder_recursive(const std::string& folder_id_to_delete, std::vector<FolderInfo>& all_folders, std::vector<ConnectionInfo>& all_connections);
 };
