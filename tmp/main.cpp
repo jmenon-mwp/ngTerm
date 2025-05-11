@@ -942,11 +942,6 @@ void build_leftFrame(Gtk::Frame& left_frame, Gtk::ScrolledWindow& left_scrolled_
     // connection_columns is already global
 
     Gtk::Box* vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 0));
-    // Ensure the frame is empty before adding the new vbox
-    Gtk::Widget* current_child = left_frame.get_child();
-    if (current_child) {
-        left_frame.remove(); // Corrected: remove() takes no arguments
-    }
     left_frame.add(*vbox);
 
     // Create Toolbar
@@ -1365,15 +1360,13 @@ int main(int argc, char* argv[]) {
     info_frame->set_label_widget(*frame_title_label); // Use ->
     info_frame->set_shadow_type(Gtk::SHADOW_ETCHED_IN); // Use ->
     info_frame->set_border_width(5); // Use ->
-
-    // Ensure info_frame is empty before adding info_grid
-    Gtk::Widget* current_info_child = info_frame->get_child();
-    if (current_info_child) {
-        info_frame->remove();
-    }
-    info_frame->add(*info_grid); // Dereference
-
     left_pane_vbox.pack_start(*info_frame, false, true, 0); // expand=false, fill=true horizontally
+
+    // Setup the Grid inside the Info Frame
+    info_grid->set_border_width(5); // Use ->
+    info_grid->set_row_spacing(5); // Use ->
+    info_grid->set_column_spacing(10); // Use ->
+    info_frame->add(*info_grid); // Dereference
 
     // Add labels to the grid - Type, Hostname, Port order
     Gtk::Label type_label; // Local title label
