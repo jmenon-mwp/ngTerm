@@ -4,8 +4,6 @@
 #include <vector>
 #include <string>
 #include <glib.h> // For Glib basic types if needed
-#include <uuid/uuid.h> // For libuuid
-#include <atomic>  // Add this header for std::atomic
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -308,6 +306,22 @@ void on_add_connection_activated(Gtk::Notebook& notebook) {
     grid->set_row_spacing(10);
     dialog.get_content_area()->pack_start(*grid, Gtk::PACK_EXPAND_WIDGET);
 
+    // --- Determine initially selected folder from TreeView ---
+    std::string initially_selected_folder_id = ""; // Default to root/none
+    if (connections_treeview) { // Ensure the global treeview pointer is valid
+        Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview->get_selection();
+        if (selection) {
+            Gtk::TreeModel::iterator iter = selection->get_selected();
+            if (iter) {
+                Gtk::TreeModel::Row row = *iter;
+                if (row[connection_columns.is_folder]) { // Check if it's a folder
+                    initially_selected_folder_id = static_cast<Glib::ustring>(row[connection_columns.id]);
+                }
+            }
+        }
+    }
+    // --- End of determining initially selected folder ---
+
     // Folder selection (ComboBoxText)
     Gtk::Label folder_label("Folder:");
     folder_label.set_halign(Gtk::ALIGN_START);
@@ -318,7 +332,14 @@ void on_add_connection_activated(Gtk::Notebook& notebook) {
     for (const auto& folder : folders) {
         folder_combo.append(folder.id, folder.name);
     }
-    folder_combo.set_active(0); // Default to "None"
+    // folder_combo.set_active(0); // Default to "None" - Replaced by smarter selection
+
+    // Set the active item in the combo box based on treeview selection or default to None (Root Level)
+    if (!initially_selected_folder_id.empty()) {
+        folder_combo.set_active_id(initially_selected_folder_id); // set_active_id handles non-existent IDs gracefully
+    } else {
+        folder_combo.set_active(0); // Default to "None (Root Level)" which is the first item (index 0)
+    }
 
     // Connection Type (ComboBoxText) - NEW
     Gtk::Label type_label("Connection Type:");
@@ -725,7 +746,7 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
     // Ensure the frame is empty before adding the new vbox
     Gtk::Widget* current_child = left_frame.get_child();
     if (current_child) {
-        left_frame.remove(); // Corrected: remove() takes no arguments
+        left_frame.remove(); // Correct: Gtk::Bin::remove() takes no arguments
     }
     left_frame.add(*vbox);
 
@@ -813,7 +834,7 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
     delete_conn_button->set_margin_end(1);
     delete_conn_button->set_margin_top(0);
     delete_conn_button->set_margin_bottom(0);
-    delete_conn_button->signal_clicked().connect([&connections_treeview_ref, &connections_liststore_ref, &columns_ref, &parent_window]() {
+    delete_conn_button->signal_clicked().connect([&connections_treeview_ref, &connections_liststore_ref, &columns_ref, &parent_window]() { // Added parent_window capture
         if (!connections_treeview) return; // Ensure global connections_treeview is used or capture local ref
         Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview_ref.get_selection();
         if (selection) {
@@ -1122,10 +1143,9 @@ int main(int argc, char* argv[]) {
     // Ensure info_frame is empty before adding info_grid
     Gtk::Widget* current_info_child = info_frame->get_child();
     if (current_info_child) {
-        info_frame->remove();
+        info_frame->remove(); // Correct: Gtk::Bin::remove() takes no arguments
     }
-    info_frame->add(*info_grid); // Dereference
-
+    info_frame->add(*info_grid); // Add the global info_grid to the global info_frame
     left_pane_vbox.pack_start(*info_frame, false, true, 0); // expand=false, fill=true horizontally
 
     // Add labels to the grid - Type, Hostname, Port order

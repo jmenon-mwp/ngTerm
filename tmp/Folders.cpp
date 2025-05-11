@@ -31,21 +31,6 @@ void add_folder(Gtk::Window& parent_window,
     Gtk::Entry name_entry;
     name_entry.set_hexpand(true);
 
-    // --- Determine initially selected parent folder from TreeView ---
-    std::string initially_selected_parent_id = "root_placeholder_id"; // Default to root
-    Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview.get_selection();
-    if (selection) {
-        Gtk::TreeModel::iterator iter = selection->get_selected();
-        if (iter) {
-            Gtk::TreeModel::Row row = *iter;
-            // Check if the selected item in the TreeView is actually a folder
-            if (row[columns.is_folder]) {
-                initially_selected_parent_id = static_cast<Glib::ustring>(row[columns.id]);
-            }
-        }
-    }
-    // --- End of determining initially selected parent ---
-
     // Parent Folder
     Gtk::Label parent_label("Parent Folder:");
     parent_label.set_halign(Gtk::ALIGN_START);
@@ -58,24 +43,7 @@ void add_folder(Gtk::Window& parent_window,
     for (const auto& folder : existing_folders) {
         parent_combo.append(folder.id, folder.name);
     }
-    // parent_combo.set_active(0); // Default to (Root Level) - Replaced by smarter selection below
-
-    // Set the active item in the combo box based on treeview selection or default to root
-    bool parent_id_found_in_combo = false;
-    if (initially_selected_parent_id != "root_placeholder_id" && !initially_selected_parent_id.empty()) {
-        // Check if this ID exists in the combo box. Gtk::ComboBoxText::set_active_id handles non-existent IDs gracefully by not changing selection.
-        // To be certain it selects correctly, we iterate and confirm.
-        for (const auto& folder_item : existing_folders) { // Check against actual folders added
-            if (folder_item.id == initially_selected_parent_id) {
-                parent_combo.set_active_id(initially_selected_parent_id);
-                parent_id_found_in_combo = true;
-                break;
-            }
-        }
-    }
-    if (!parent_id_found_in_combo) {
-        parent_combo.set_active_id("root_placeholder_id"); // Default to (Root Level)
-    }
+    parent_combo.set_active(0); // Default to (Root Level)
 
     // Attach to grid
     grid->attach(name_label,   0, 0, 1, 1);
@@ -85,7 +53,6 @@ void add_folder(Gtk::Window& parent_window,
 
     dialog.add_button("Cancel", Gtk::RESPONSE_CANCEL);
     dialog.add_button("Add", Gtk::RESPONSE_OK);
-    dialog.show_all();
 
     int result = dialog.run();
     if (result == Gtk::RESPONSE_OK) {
