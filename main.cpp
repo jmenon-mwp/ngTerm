@@ -18,6 +18,7 @@
 #include "Connections.h"
 #include "Folders.h"
 #include "Ssh.h" // Include Ssh.h
+#include "Config.h" // Include the new Config.h
 #include <sys/wait.h> // For wait status macros (WIFEXITED, WEXITSTATUS, etc.)
 
 using json = nlohmann::json;
@@ -155,6 +156,7 @@ void on_edit_connection_activate() {
     dialog.set_default_size(400, 350);
 
     Gtk::Grid* grid = Gtk::manage(new Gtk::Grid());
+    grid->set_hexpand(true); // Ensure the main grid expands horizontally
     grid->set_border_width(10);
     grid->set_column_spacing(10);
     grid->set_row_spacing(10);
@@ -254,7 +256,8 @@ void on_edit_connection_activate() {
     Gtk::Button* save_button = dialog.add_button("_Save", Gtk::RESPONSE_OK);
     save_button->get_style_context()->add_class("suggested-action");
 
-    dialog.show_all();
+    dialog.show_all(); // Show the dialog and its initial contents first
+
     int response = dialog.run();
 
     if (response == Gtk::RESPONSE_OK) {
@@ -299,50 +302,44 @@ void on_edit_connection_activate() {
 // Function to handle adding a new connection
 void on_add_connection_activated(Gtk::Notebook& notebook) {
     Gtk::Dialog dialog("Add New Connection", true /* modal */);
-    dialog.set_default_size(400, 350); // Adjusted default size
+    dialog.set_default_size(450, 0); // Adjusted default width, height will adapt
 
     Gtk::Grid* grid = Gtk::manage(new Gtk::Grid());
+    grid->set_hexpand(true); // Ensure the main grid expands horizontally
     grid->set_border_width(10);
     grid->set_column_spacing(10);
     grid->set_row_spacing(10);
     dialog.get_content_area()->pack_start(*grid, Gtk::PACK_EXPAND_WIDGET);
 
-    // --- Determine initially selected folder from TreeView ---
-    std::string initially_selected_folder_id = ""; // Default to root/none
-    if (connections_treeview) { // Ensure the global treeview pointer is valid
+    std::string initially_selected_folder_id = "";
+    if (connections_treeview) {
         Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview->get_selection();
         if (selection) {
             Gtk::TreeModel::iterator iter = selection->get_selected();
             if (iter) {
                 Gtk::TreeModel::Row row = *iter;
-                if (row[connection_columns.is_folder]) { // Check if it's a folder
+                if (row[connection_columns.is_folder]) {
                     initially_selected_folder_id = static_cast<Glib::ustring>(row[connection_columns.id]);
                 }
             }
         }
     }
-    // --- End of determining initially selected folder ---
 
-    // Folder selection (ComboBoxText)
     Gtk::Label folder_label("Folder:");
     folder_label.set_halign(Gtk::ALIGN_START);
     Gtk::ComboBoxText folder_combo;
     folder_combo.set_hexpand(true);
     std::vector<FolderInfo> folders = ConnectionManager::load_folders();
-    folder_combo.append("", "None (Root Level)"); // Option for no folder
+    folder_combo.append("", "None (Root Level)");
     for (const auto& folder : folders) {
         folder_combo.append(folder.id, folder.name);
     }
-    // folder_combo.set_active(0); // Default to "None" - Replaced by smarter selection
-
-    // Set the active item in the combo box based on treeview selection or default to None (Root Level)
     if (!initially_selected_folder_id.empty()) {
-        folder_combo.set_active_id(initially_selected_folder_id); // set_active_id handles non-existent IDs gracefully
+        folder_combo.set_active_id(initially_selected_folder_id);
     } else {
-        folder_combo.set_active(0); // Default to "None (Root Level)" which is the first item (index 0)
+        folder_combo.set_active(0);
     }
 
-    // Connection Type (ComboBoxText) - NEW
     Gtk::Label type_label("Connection Type:");
     type_label.set_halign(Gtk::ALIGN_START);
     Gtk::ComboBoxText type_combo;
@@ -351,258 +348,272 @@ void on_add_connection_activated(Gtk::Notebook& notebook) {
     type_combo.append("Telnet", "Telnet");
     type_combo.append("VNC", "VNC");
     type_combo.append("RDP", "RDP");
-    type_combo.set_active_text("SSH"); // Default to SSH
+    type_combo.set_active_text("SSH");
 
-    // Connection Name
     Gtk::Label name_label("Connection Name:");
     name_label.set_halign(Gtk::ALIGN_START);
     Gtk::Entry name_entry;
     name_entry.set_hexpand(true);
 
-    // Host
     Gtk::Label host_label("Host:");
     host_label.set_halign(Gtk::ALIGN_START);
     Gtk::Entry host_entry;
     host_entry.set_hexpand(true);
 
-    // Port
     Gtk::Label port_label("Port:");
     port_label.set_halign(Gtk::ALIGN_START);
     Gtk::Entry port_entry;
     port_entry.set_hexpand(true);
 
-    // Username
     Gtk::Label user_label("Username:");
     user_label.set_halign(Gtk::ALIGN_START);
     Gtk::Entry user_entry;
     user_entry.set_hexpand(true);
 
-    // Attach to grid
+    // --- SSH Specific Options ---
+    auto ssh_options_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 10));
+    ssh_options_box->set_hexpand(true); // Ensure the SSH options box expands horizontally
+    ssh_options_box->set_name("ssh_options_box"); // For potential CSS styling/debugging
+
+    // Authentication Method
+    auto auth_method_grid = Gtk::manage(new Gtk::Grid());
+    auth_method_grid->set_column_spacing(10);
+    Gtk::Label auth_method_label("Auth Method:");
+    auth_method_label.set_halign(Gtk::ALIGN_START);
+    Gtk::ComboBoxText auth_method_combo;
+    auth_method_combo.append("Password", "Password");
+    auth_method_combo.append("SSHKey", "SSH Key");
+    auth_method_combo.set_active_text("Password");
+    auth_method_combo.set_hexpand(true);
+    auth_method_grid->attach(auth_method_label, 0, 0, 1, 1);
+    auth_method_grid->attach(auth_method_combo, 1, 0, 1, 1);
+    ssh_options_box->pack_start(*auth_method_grid, Gtk::PACK_SHRINK);
+
+    // Password Fields (managed by a box for easy show/hide)
+    auto password_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    auto password_grid = Gtk::manage(new Gtk::Grid());
+    password_grid->set_column_spacing(10);
+    Gtk::Label password_label("Password:");
+    password_label.set_halign(Gtk::ALIGN_START);
+    Gtk::Entry password_entry;
+    password_entry.set_visibility(false); // Mask password
+    password_entry.set_hexpand(true);
+    password_grid->attach(password_label, 0, 0, 1, 1);
+    password_grid->attach(password_entry, 1, 0, 1, 1);
+    password_box->pack_start(*password_grid, Gtk::PACK_SHRINK);
+
+    // SSH Key Fields (managed by a box for easy show/hide)
+    auto ssh_key_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+
+    auto ssh_key_path_grid = Gtk::manage(new Gtk::Grid());
+    ssh_key_path_grid->set_column_spacing(10);
+    Gtk::Label ssh_key_label("SSH Key File:");
+    ssh_key_label.set_halign(Gtk::ALIGN_START);
+    Gtk::Entry ssh_key_path_entry;
+    ssh_key_path_entry.set_hexpand(true);
+    ssh_key_path_entry.set_editable(false); // User should use browse button
+    Gtk::Button ssh_key_browse_button("Browse...");
+    ssh_key_path_grid->attach(ssh_key_label, 0, 0, 1, 1);
+    ssh_key_path_grid->attach(ssh_key_path_entry, 1, 0, 1, 1);
+    ssh_key_path_grid->attach(ssh_key_browse_button, 2, 0, 1, 1); // Next to path entry
+    ssh_key_box->pack_start(*ssh_key_path_grid, Gtk::PACK_SHRINK);
+
+    auto ssh_key_passphrase_grid = Gtk::manage(new Gtk::Grid());
+    ssh_key_passphrase_grid->set_column_spacing(10);
+    Gtk::Label ssh_key_passphrase_label("Key Passphrase:");
+    ssh_key_passphrase_label.set_halign(Gtk::ALIGN_START);
+    Gtk::Entry ssh_key_passphrase_entry;
+    ssh_key_passphrase_entry.set_visibility(false); // Mask passphrase
+    ssh_key_passphrase_entry.set_hexpand(true);
+    ssh_key_passphrase_grid->attach(ssh_key_passphrase_label, 0, 0, 1, 1);
+    ssh_key_passphrase_grid->attach(ssh_key_passphrase_entry, 1, 0, 1, 1);
+    ssh_key_box->pack_start(*ssh_key_passphrase_grid, Gtk::PACK_SHRINK);
+
+    ssh_options_box->pack_start(*password_box); // Add password_box to ssh_options_box
+    ssh_options_box->pack_start(*ssh_key_box);   // Add ssh_key_box to ssh_options_box
+    ssh_key_box->hide(); // Initially hide SSH key specific fields
+
+    // Additional SSH Options
+    auto additional_options_grid = Gtk::manage(new Gtk::Grid());
+    additional_options_grid->set_column_spacing(10);
+    Gtk::Label additional_options_label("Addtl. Options:");
+    additional_options_label.set_halign(Gtk::ALIGN_START);
+    Gtk::Entry additional_options_entry;
+    additional_options_entry.set_hexpand(true);
+    additional_options_grid->attach(additional_options_label, 0, 0, 1, 1);
+    additional_options_grid->attach(additional_options_entry, 1, 0, 1, 1);
+    ssh_options_box->pack_start(*additional_options_grid, Gtk::PACK_SHRINK);
+    // --- End SSH Specific Options ---
+
+    // Attach to main grid
     // Row 0: Folder
     grid->attach(folder_label, 0, 0, 1, 1);
-    grid->attach(folder_combo, 1, 0, 1, 1);
-    // Row 1: Connection Type - NEW
+    grid->attach(folder_combo, 1, 0, 2, 1); // Span 2 columns
+    // Row 1: Connection Type
     grid->attach(type_label, 0, 1, 1, 1);
-    grid->attach(type_combo, 1, 1, 1, 1);
+    grid->attach(type_combo, 1, 1, 2, 1); // Span 2 columns
     // Row 2: Name
     grid->attach(name_label, 0, 2, 1, 1);
-    grid->attach(name_entry, 1, 2, 1, 1);
+    grid->attach(name_entry, 1, 2, 2, 1); // Span 2 columns
     // Row 3: Host
     grid->attach(host_label, 0, 3, 1, 1);
-    grid->attach(host_entry, 1, 3, 1, 1);
+    grid->attach(host_entry, 1, 3, 2, 1); // Span 2 columns
     // Row 4: Port
     grid->attach(port_label, 0, 4, 1, 1);
-    grid->attach(port_entry, 1, 4, 1, 1);
+    grid->attach(port_entry, 1, 4, 2, 1); // Span 2 columns
     // Row 5: Username
     grid->attach(user_label, 0, 5, 1, 1);
-    grid->attach(user_entry, 1, 5, 1, 1);
+    grid->attach(user_entry, 1, 5, 2, 1); // Span 2 columns
+    // Row 6: SSH Specific Options Box (spans multiple columns)
+    grid->attach(*ssh_options_box, 0, 6, 3, 1); // Span all 3 columns
 
-    // Auto-fill port based on connection type - NEW
-    type_combo.signal_changed().connect([&type_combo, &port_entry]() {
+    // --- Signal Handlers for Dynamic UI ---
+    auto update_visibility = [&]() {
+        bool is_ssh = (type_combo.get_active_text() == "SSH");
+        ssh_options_box->set_visible(is_ssh);
+
+        if (is_ssh) {
+            bool is_password_auth = (auth_method_combo.get_active_text() == "Password");
+            password_box->set_visible(is_password_auth);
+            ssh_key_box->set_visible(!is_password_auth);
+            if (is_password_auth) {
+                ssh_key_path_entry.set_text("");
+                ssh_key_passphrase_entry.set_text("");
+            } else {
+                password_entry.set_text("");
+            }
+        } else { // Not SSH, clear all SSH fields
+            auth_method_combo.set_active_text("Password"); // Reset auth method
+            password_entry.set_text("");
+            ssh_key_path_entry.set_text("");
+            ssh_key_passphrase_entry.set_text("");
+            additional_options_entry.set_text("");
+        }
+        // dialog.queue_resize(); // May help if dialog doesn't resize correctly
+    };
+
+    type_combo.signal_changed().connect([&]() {
         std::string selected_type = type_combo.get_active_text();
         std::string current_port = port_entry.get_text();
-        if (current_port.empty()) {
+        // Auto-fill port only if user hasn't typed one or it's a default one we set
+        bool port_is_default_or_empty = current_port.empty() || current_port == "22" || current_port == "23" || current_port == "5900" || current_port == "3389";
+
+        if (port_is_default_or_empty) {
             if (selected_type == "SSH") port_entry.set_text("22");
             else if (selected_type == "Telnet") port_entry.set_text("23");
             else if (selected_type == "VNC") port_entry.set_text("5900");
             else if (selected_type == "RDP") port_entry.set_text("3389");
+            else port_entry.set_text(""); // Clear for other types
+        }
+        update_visibility();
+    });
+
+    auth_method_combo.signal_changed().connect(update_visibility);
+
+    // SSH Key File Browse Button
+    ssh_key_browse_button.signal_clicked().connect([&dialog, &ssh_key_path_entry]() {
+        Gtk::FileChooserDialog file_dialog(dialog, "Select SSH Key File", Gtk::FILE_CHOOSER_ACTION_OPEN);
+        file_dialog.add_button("_Cancel", Gtk::RESPONSE_CANCEL);
+        file_dialog.add_button("_Open", Gtk::RESPONSE_ACCEPT);
+
+        // Optional: Add filters for common key types
+        auto filter_any = Gtk::FileFilter::create();
+        filter_any->set_name("All files");
+        filter_any->add_pattern("*");
+        file_dialog.add_filter(filter_any);
+
+        auto filter_pem = Gtk::FileFilter::create();
+        filter_pem->set_name("PEM files (*.pem)");
+        filter_pem->add_pattern("*.pem");
+        file_dialog.add_filter(filter_pem);
+
+        // You could add more filters for id_rsa, id_ed25519 etc. if desired
+
+        int result = file_dialog.run();
+        if (result == Gtk::RESPONSE_ACCEPT) {
+            ssh_key_path_entry.set_text(file_dialog.get_filename());
         }
     });
-    // Trigger it once to set default port for SSH if port is empty
+
+    // Initial visibility update
+    update_visibility();
     if (port_entry.get_text().empty() && type_combo.get_active_text() == "SSH") {
          port_entry.set_text("22");
     }
 
+    dialog.show_all_children(); // Use show_all_children to ensure dynamic boxes are initially processed
 
-    // Buttons
-    dialog.add_button("Cancel", Gtk::RESPONSE_CANCEL);
-    Gtk::Button* save_button = dialog.add_button("Save", Gtk::RESPONSE_OK);
-    save_button->get_style_context()->add_class("suggested-action"); // Optional: make save button prominent
+    dialog.show_all(); // Show the dialog and its initial contents first
 
-    dialog.show_all();
+    int response = dialog.run();
 
-    int result = dialog.run();
-
-    if (result == Gtk::RESPONSE_OK) {
+    if (response == Gtk::RESPONSE_OK) {
+        if (name_entry.get_text().empty()) {
+            Gtk::MessageDialog md(dialog, "Connection name cannot be empty.", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
+            md.run();
+            return; // Or re-show dialog, or specific handling
+        }
         ConnectionInfo new_connection;
         new_connection.id = ConnectionManager::generate_connection_id();
         new_connection.name = name_entry.get_text();
         new_connection.host = host_entry.get_text();
-        new_connection.username = user_entry.get_text();
-        new_connection.connection_type = type_combo.get_active_text(); // Save selected type
 
         std::string port_str = port_entry.get_text();
         if (!port_str.empty()) {
             try {
                 new_connection.port = std::stoi(port_str);
             } catch (const std::invalid_argument& ia) {
-                std::cerr << "Invalid port number: " << port_str << std::endl;
-                // Optionally show an error dialog to the user
-                Gtk::MessageDialog error_dialog(dialog, "Invalid Port Number", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
-                error_dialog.set_secondary_text("The port number entered is not a valid number.");
-                error_dialog.run();
-                return; // Don't save if port is invalid
+                Gtk::MessageDialog err_dialog(dialog, "Invalid Port Number", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
+                err_dialog.run();
+                return;
             } catch (const std::out_of_range& oor) {
-                std::cerr << "Port number out of range: " << port_str << std::endl;
-                Gtk::MessageDialog error_dialog(dialog, "Port Number Out of Range", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
-                error_dialog.set_secondary_text("The port number is too large or too small.");
-                error_dialog.run();
-                return; // Don't save if port is out of range
+                Gtk::MessageDialog err_dialog(dialog, "Port Number Out of Range", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
+                err_dialog.run();
+                return;
             }
         } else {
-             // If port is empty, attempt to set default based on type again, or handle as error/default
-            std::string selected_type = type_combo.get_active_text();
-            if (selected_type == "SSH") new_connection.port = 22;
-            else if (selected_type == "Telnet") new_connection.port = 23;
-            else if (selected_type == "VNC") new_connection.port = 5900;
-            else if (selected_type == "RDP") new_connection.port = 3389;
-            else new_connection.port = 0; // Or some other default/error indicator
+            new_connection.port = 0; // Or a default based on type if desired
         }
 
-        // Get selected folder ID
-        Glib::ustring active_folder_id = folder_combo.get_active_id();
-        if (!active_folder_id.empty() && active_folder_id != "") { // Check if a folder is selected
-             new_connection.folder_id = active_folder_id;
+        new_connection.username = user_entry.get_text();
+        new_connection.connection_type = type_combo.get_active_text();
+
+        Glib::ustring selected_folder_id_str = folder_combo.get_active_id();
+        if (!selected_folder_id_str.empty()) {
+            new_connection.folder_id = selected_folder_id_str;
+        } else {
+            new_connection.folder_id = ""; // Explicitly set to empty if "None" was chosen
+        }
+
+        if (new_connection.connection_type == "SSH") {
+            new_connection.auth_method = auth_method_combo.get_active_text();
+            if (new_connection.auth_method == "Password") {
+                new_connection.password = password_entry.get_text();
+                // Clear SSH key fields for hygiene
+                new_connection.ssh_key_path = "";
+                new_connection.ssh_key_passphrase = "";
+            } else if (new_connection.auth_method == "SSHKey") {
+                new_connection.ssh_key_path = ssh_key_path_entry.get_text();
+                new_connection.ssh_key_passphrase = ssh_key_passphrase_entry.get_text();
+                // Clear password field for hygiene
+                new_connection.password = "";
+            }
+            new_connection.additional_ssh_options = additional_options_entry.get_text();
+        } else {
+            // Clear SSH specific fields if not an SSH connection
+            new_connection.auth_method = "";
+            new_connection.password = "";
+            new_connection.ssh_key_path = "";
+            new_connection.ssh_key_passphrase = "";
+            new_connection.additional_ssh_options = "";
         }
 
         if (ConnectionManager::save_connection(new_connection)) {
-            // Refresh the connections list
-            populate_connections_treeview(connections_liststore, connection_columns, *connections_treeview);
+            populate_connections_treeview(connections_liststore, connection_columns, *connections_treeview); // Refresh TreeView
         } else {
-            // Optionally show an error dialog
-            Gtk::MessageDialog error_dialog(dialog, "Save Failed", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
-            error_dialog.set_secondary_text("Could not save the connection details.");
-            error_dialog.run();
+            Gtk::MessageDialog err_dialog(dialog, "Failed to save connection.", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
+            err_dialog.run();
         }
-    }
-}
-
-// Function to manage application configuration
-void manage_config() {
-    // Get the path to the user's home directory
-    const char* home_dir = std::getenv("HOME");
-    if (!home_dir) {
-        std::cerr << "Could not find home directory" << std::endl;
-        return;
-    }
-
-    // Construct the path to the ngTerm config directory
-    std::filesystem::path config_dir =
-        std::filesystem::path(home_dir) / ".config" / "ngTerm";
-
-    // Create the directory if it doesn't exist
-    try {
-        if (!std::filesystem::exists(config_dir)) {
-            std::filesystem::create_directories(config_dir);
-            std::cout << "Created config directory: " << config_dir << std::endl;
-        }
-    } catch (const std::filesystem::filesystem_error& e) {
-        std::cerr << "Error creating config directory: " << e.what() << std::endl;
-        return;
-    }
-
-    // Path to the configuration file
-    std::filesystem::path config_file = config_dir / "ngTerm.json";
-
-    // Create default configuration only if the file doesn't exist
-    if (!std::filesystem::exists(config_file)) {
-        try {
-            // Create default configuration
-            json default_config = {
-                {"window_width", 1024},
-                {"window_height", 768}
-            };
-
-            // Write default configuration to file
-            std::ofstream file(config_file);
-            if (!file.is_open()) {
-                std::cerr << "Failed to open config file for writing: " << config_file << std::endl;
-                return;
-            }
-
-            file << default_config.dump(4);  // Pretty print with 4 spaces
-            file.close();
-
-            std::cout << "Created default configuration file: " << config_file << std::endl;
-        } catch (const std::exception& e) {
-            std::cerr << "Error writing config file: " << e.what() << std::endl;
-        }
-    }
-}
-
-// Function to read configuration
-json read_config() {
-    // Get the path to the user's home directory
-    const char* home_dir = std::getenv("HOME");
-    if (!home_dir) {
-        std::cerr << "Could not find home directory" << std::endl;
-        return {
-            {"window_width", 1024},
-            {"window_height", 768}
-        };
-    }
-
-    // Construct the path to the configuration file
-    std::filesystem::path config_file =
-        std::filesystem::path(home_dir) / ".config" / "ngTerm" / "ngTerm.json";
-
-    try {
-        // First, ensure the config file exists
-        if (!std::filesystem::exists(config_file)) {
-            std::cerr << "Config file does not exist: " << config_file << std::endl;
-            manage_config();  // Try to create the config file
-        }
-
-        std::ifstream file(config_file);
-        if (!file.is_open()) {
-            std::cerr << "Could not open config file: " << config_file << std::endl;
-            return {
-                {"window_width", 1024},
-                {"window_height", 768}
-            };
-        }
-
-        json config;
-        file >> config;
-        return config;
-    } catch (const std::exception& e) {
-        std::cerr << "Error reading config file: " << e.what() << std::endl;
-        return {
-            {"window_width", 1024},
-            {"window_height", 768}
-        };
-    }
-}
-
-// Function to save configuration
-void save_config(const json& config) {
-    // Get the path to the user's home directory
-    const char* home_dir = std::getenv("HOME");
-    if (!home_dir) {
-        std::cerr << "Could not find home directory" << std::endl;
-        return;
-    }
-
-    // Construct the path to the configuration file
-    std::filesystem::path config_file =
-        std::filesystem::path(home_dir) / ".config" / "ngTerm" / "ngTerm.json";
-
-    try {
-        // Ensure the directory exists
-        std::filesystem::create_directories(config_file.parent_path());
-
-        // Write configuration to file
-        std::ofstream file(config_file);
-        if (!file.is_open()) {
-            std::cerr << "Failed to open config file for writing: " << config_file << std::endl;
-            return;
-        }
-
-        file << config.dump(4);  // Pretty print with 4 spaces
-        file.close();
-
-    } catch (const std::exception& e) {
-        std::cerr << "Error writing config file: " << e.what() << std::endl;
     }
 }
 
@@ -1120,15 +1131,14 @@ int main(int argc, char* argv[]) {
     port_value_label->set_valign(Gtk::ALIGN_START); // Align content to the top
     // --- End of instantiation ---
 
-    // Manage configuration
-    manage_config();
+    // Read configuration
+    json config = read_config();
 
     // Create the main window
     Gtk::Window window;
     window.set_title("ngTerm");
 
-    // Read configuration
-    json config = read_config();
+    // Set the window size based on the configuration
     window.set_default_size(config["window_width"], config["window_height"]);
 
     // Create a vertical box to hold the main content
@@ -1283,7 +1293,7 @@ int main(int argc, char* argv[]) {
                             conn_info.port = std::stoi(port_ustr.raw());
                         } catch (const std::exception& e) {
                             conn_info.port = 0;
-                            std::cerr << "Error converting port for SSH: " << port_ustr.raw() << " - " << e.what() << std::endl;
+                            std::cerr << "Error converting port for SSH: " << port_ustr << " - " << e.what() << std::endl;
                         }
                     } else {
                         conn_info.port = 0;

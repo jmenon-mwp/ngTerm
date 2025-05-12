@@ -9,34 +9,47 @@
 #include <iomanip>
 #include <sstream>
 #include <chrono>
+#include <glibmm.h>
 
 using json = nlohmann::json;
 
 // Struct to represent a folder for organizing connections
 struct FolderInfo {
-    std::string id;        // Unique identifier for the folder
-    std::string name;      // Display name of the folder
-    std::string parent_id; // ID of the parent folder, empty for root
+    Glib::ustring id;        // Unique identifier for the folder
+    Glib::ustring name;      // Display name of the folder
+    Glib::ustring parent_id; // ID of the parent folder, empty for root
 };
 
 // Struct to represent connection details
 struct ConnectionInfo {
-    std::string id;        // Unique identifier for the connection
-    std::string name;      // Connection display name
-    std::string host;      // Optional host
-    int port;              // Optional port
-    std::string username;  // Optional username
-    std::string folder_id; // Optional folder reference
-    std::string connection_type; // Type of connection (e.g., SSH, Telnet, VNC, RDP)
+    Glib::ustring id;
+    Glib::ustring name;
+    Glib::ustring host;
+    int port;
+    Glib::ustring username;
+    Glib::ustring connection_type; // "SSH", "Telnet", "Serial", etc.
+    Glib::ustring folder_id; // ID of the parent folder, or empty if top-level
+
+    // SSH Specific Fields - NEW
+    Glib::ustring auth_method;          // "Password" or "SSHKey"
+    Glib::ustring password;             // SSH password (NOTE: Storing plain text is insecure)
+    Glib::ustring ssh_key_path;         // Path to SSH private key file
+    Glib::ustring ssh_key_passphrase;   // Passphrase for the SSH private key (if encrypted)
+    Glib::ustring additional_ssh_options; // e.g., "-o StrictHostKeyChecking=no"
+
+    bool is_folder = false; // Helper to distinguish in combined lists, not directly saved if representing a pure folder.
+    Glib::ustring parent_id_col; // Only used by TreeView model logic
+
+    ConnectionInfo() : port(0), is_folder(false) {}
 };
 
 class ConnectionManager {
 public:
     // Generate a unique connection ID
-    static std::string generate_connection_id();
+    static Glib::ustring generate_connection_id();
 
     // Generate a unique folder ID
-    static std::string generate_folder_id();
+    static Glib::ustring generate_folder_id();
 
     // Save connection to JSON file
     static bool save_connection(const ConnectionInfo& connection);
@@ -51,14 +64,14 @@ public:
     static std::vector<FolderInfo> load_folders();
 
     // Delete a connection by ID
-    static bool delete_connection(const std::string& connection_id);
+    static bool delete_connection(const Glib::ustring& connection_id);
 
     // Delete a folder by ID
-    static bool delete_folder(const std::string& folder_id);
+    static bool delete_folder(const Glib::ustring& folder_id);
 
     // Get folder names for populating dropdown
-    static std::vector<std::string> get_folder_names() {
-        std::vector<std::string> folder_names;
+    static std::vector<Glib::ustring> get_folder_names() {
+        std::vector<Glib::ustring> folder_names;
         std::vector<FolderInfo> folders = load_folders();
         for (const auto& folder : folders) {
             folder_names.push_back(folder.name);
@@ -67,7 +80,7 @@ public:
     }
 
     // Get folder name by folder ID
-    static std::string get_folder_name(const std::string& folder_id) {
+    static Glib::ustring get_folder_name(const Glib::ustring& folder_id) {
         if (folder_id.empty()) return "";
 
         std::vector<FolderInfo> folders = load_folders();
@@ -78,7 +91,7 @@ public:
     }
 
     // Get connections for a specific folder
-    static std::vector<ConnectionInfo> get_connections_by_folder(const std::string& folder_id) {
+    static std::vector<ConnectionInfo> get_connections_by_folder(const Glib::ustring& folder_id) {
         std::vector<ConnectionInfo> folder_connections;
         std::vector<ConnectionInfo> all_connections = load_connections();
 
@@ -92,7 +105,7 @@ public:
     }
 
     // Get folder ID by folder name
-    static std::string get_folder_id(const std::string& folder_name) {
+    static Glib::ustring get_folder_id(const Glib::ustring& folder_name) {
         std::vector<FolderInfo> folders = load_folders();
         auto it = std::find_if(folders.begin(), folders.end(),
             [&folder_name](const FolderInfo& f) { return f.name == folder_name; });
@@ -108,6 +121,8 @@ private:
     static std::filesystem::path get_connections_dir();
     static std::filesystem::path get_connections_file();
     static std::filesystem::path get_folders_file();
+    // Helper function to ensure parent directory exists
+    static void ensure_parent_directory_exists(const std::filesystem::path& file_path);
     // Helper for recursive folder deletion
-    static void delete_folder_recursive(const std::string& folder_id_to_delete, std::vector<FolderInfo>& all_folders, std::vector<ConnectionInfo>& all_connections);
+    static void delete_folder_recursive(const Glib::ustring& folder_id_to_delete, std::vector<FolderInfo>& all_folders, std::vector<ConnectionInfo>& all_connections);
 };

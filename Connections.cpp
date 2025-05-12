@@ -2,7 +2,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <random>
+#include <uuid/uuid.h>
 #include <algorithm>
 #include <nlohmann/json.hpp>
 
@@ -21,57 +21,112 @@ std::filesystem::path ConnectionManager::get_folders_file() {
     return get_connections_dir() / "folders.json";
 }
 
-std::string ConnectionManager::generate_connection_id() {
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(1000, 9999);
-    return "conn_" + std::to_string(dis(gen));
+void ConnectionManager::ensure_parent_directory_exists(const std::filesystem::path& file_path) {
+    if (!file_path.has_parent_path()) {
+        return; // No parent path to create
+    }
+    std::filesystem::path parent_dir = file_path.parent_path();
+    if (!std::filesystem::exists(parent_dir)) {
+        std::filesystem::create_directories(parent_dir);
+    }
 }
 
-std::string ConnectionManager::generate_folder_id() {
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(1000, 9999);
-    return "folder_" + std::to_string(dis(gen));
+Glib::ustring ConnectionManager::generate_connection_id() {
+    uuid_t uuid;
+    uuid_generate_random(uuid);
+    char uuid_str[37]; // 36 characters + null terminator
+    uuid_unparse_lower(uuid, uuid_str);
+    return Glib::ustring(uuid_str);
+}
+
+Glib::ustring ConnectionManager::generate_folder_id() {
+    uuid_t uuid;
+    uuid_generate_random(uuid);
+    char uuid_str[37]; // 36 characters + null terminator
+    uuid_unparse_lower(uuid, uuid_str);
+    return Glib::ustring(uuid_str);
 }
 
 bool ConnectionManager::save_connection(const ConnectionInfo& connection) {
-    try {
-        std::vector<ConnectionInfo> connections = load_connections();
+    std::vector<ConnectionInfo> connections = load_connections();
+    std::filesystem::path file_path = get_connections_file();
+    std::filesystem::create_directories(file_path.parent_path());
 
-        // Check if connection with same ID exists
-        auto it = std::find_if(connections.begin(), connections.end(),
-            [&connection](const ConnectionInfo& c) { return c.id == connection.id; });
+    json json_array = json::array();
+    bool found = false;
+    for (const auto& conn : connections) {
+        if (conn.id == connection.id) {
+            // Update existing connection
+            json json_conn;
+            json_conn["id"] = connection.id.raw();
+            json_conn["name"] = connection.name.raw();
+            json_conn["host"] = connection.host.raw();
+            json_conn["port"] = connection.port;
+            json_conn["username"] = connection.username.raw();
+            json_conn["connection_type"] = connection.connection_type.raw();
+            json_conn["folder_id"] = connection.folder_id.raw();
 
-        if (it != connections.end()) {
-            // Replace existing connection
-            *it = connection;
+            // SSH specific fields
+            if (connection.connection_type == "SSH") {
+                json_conn["auth_method"] = connection.auth_method.raw();
+                json_conn["password"] = connection.password.raw(); // NOTE: Storing plain text is insecure
+                json_conn["ssh_key_path"] = connection.ssh_key_path.raw();
+                json_conn["ssh_key_passphrase"] = connection.ssh_key_passphrase.raw();
+                json_conn["additional_ssh_options"] = connection.additional_ssh_options.raw();
+            }
+            json_array.push_back(json_conn);
+            found = true;
         } else {
-            // Add new connection
-            connections.push_back(connection);
-        }
+            // Add other connections back
+            json json_other_conn;
+            json_other_conn["id"] = conn.id.raw();
+            json_other_conn["name"] = conn.name.raw();
+            json_other_conn["host"] = conn.host.raw();
+            json_other_conn["port"] = conn.port;
+            json_other_conn["username"] = conn.username.raw();
+            json_other_conn["connection_type"] = conn.connection_type.raw();
+            json_other_conn["folder_id"] = conn.folder_id.raw();
 
-        // Write back to file
-        json j_connections = json::array();
-        for (const auto& conn : connections) {
-            j_connections.push_back({
-                {"id", conn.id},
-                {"name", conn.name},
-                {"host", conn.host},
-                {"port", conn.port},
-                {"username", conn.username},
-                {"folder_id", conn.folder_id},
-                {"connection_type", conn.connection_type} // Save connection type
-            });
+            if (conn.connection_type == "SSH") {
+                json_other_conn["auth_method"] = conn.auth_method.raw();
+                json_other_conn["password"] = conn.password.raw();
+                json_other_conn["ssh_key_path"] = conn.ssh_key_path.raw();
+                json_other_conn["ssh_key_passphrase"] = conn.ssh_key_passphrase.raw();
+                json_other_conn["additional_ssh_options"] = conn.additional_ssh_options.raw();
+            }
+            json_array.push_back(json_other_conn);
         }
-
-        std::ofstream file(get_connections_file());
-        file << j_connections.dump(4);
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Error saving connection: " << e.what() << std::endl;
-        return false;
     }
+
+    if (!found) {
+        // Add new connection
+        json json_conn;
+        json_conn["id"] = connection.id.raw();
+        json_conn["name"] = connection.name.raw();
+        json_conn["host"] = connection.host.raw();
+        json_conn["port"] = connection.port;
+        json_conn["username"] = connection.username.raw();
+        json_conn["connection_type"] = connection.connection_type.raw();
+        json_conn["folder_id"] = connection.folder_id.raw();
+
+        // SSH specific fields
+        if (connection.connection_type == "SSH") {
+            json_conn["auth_method"] = connection.auth_method.raw();
+            json_conn["password"] = connection.password.raw(); // NOTE: Storing plain text is insecure
+            json_conn["ssh_key_path"] = connection.ssh_key_path.raw();
+            json_conn["ssh_key_passphrase"] = connection.ssh_key_passphrase.raw();
+            json_conn["additional_ssh_options"] = connection.additional_ssh_options.raw();
+        }
+        json_array.push_back(json_conn);
+    }
+
+    std::ofstream file(file_path);
+    if (file.is_open()) {
+        file << json_array.dump(4); // pretty print JSON
+        file.close();
+        return true;
+    }
+    return false;
 }
 
 bool ConnectionManager::save_folder(const FolderInfo& folder) {
@@ -91,18 +146,24 @@ bool ConnectionManager::save_folder(const FolderInfo& folder) {
         }
 
         // Write the updated list back to the file
+        std::filesystem::path file_path = get_folders_file();
+        ConnectionManager::ensure_parent_directory_exists(file_path);
         json j_folders = json::array();
         for (const auto& f : folders) {
-            json j_folder;
-            j_folder["id"] = f.id;
-            j_folder["name"] = f.name;
-            j_folder["parent_id"] = f.parent_id; // Save parent_id
-            j_folders.push_back(j_folder);
+            j_folders.push_back({
+                {"id", f.id.raw()},
+                {"name", f.name.raw()},
+                {"parent_id", f.parent_id.raw()}
+            });
         }
 
-        std::ofstream file(get_folders_file());
-        file << j_folders.dump(4);
-        return true;
+        std::ofstream file(file_path);
+        if (file.is_open()) {
+            file << j_folders.dump(4);
+            file.close();
+            return true;
+        }
+        return false;
     } catch (const std::exception& e) {
         std::cerr << "Error saving folder: " << e.what() << std::endl;
         return false;
@@ -111,179 +172,207 @@ bool ConnectionManager::save_folder(const FolderInfo& folder) {
 
 std::vector<ConnectionInfo> ConnectionManager::load_connections() {
     std::vector<ConnectionInfo> connections;
-    std::filesystem::path connections_file = get_connections_file(); // Use the helper function
+    std::filesystem::path file_path = get_connections_file();
 
-    if (!std::filesystem::exists(connections_file)) {
-        return connections;
+    if (!std::filesystem::exists(file_path)) {
+        return connections; // Return empty if file doesn't exist
     }
 
-    std::ifstream file(connections_file);
-    try {
-        json j_connections;
-        file >> j_connections;
+    std::ifstream file(file_path);
+    if (file.is_open()) {
+        json json_array;
+        try {
+            file >> json_array;
+            if (json_array.is_array()) {
+                for (const auto& j_conn : json_array) {
+                    ConnectionInfo conn;
+                    conn.id = Glib::ustring(j_conn.value("id", ""));
+                    conn.name = Glib::ustring(j_conn.value("name", ""));
+                    conn.host = Glib::ustring(j_conn.value("host", ""));
+                    conn.port = j_conn.value("port", 0);
+                    conn.username = Glib::ustring(j_conn.value("username", ""));
+                    conn.connection_type = Glib::ustring(j_conn.value("connection_type", ""));
+                    conn.folder_id = Glib::ustring(j_conn.value("folder_id", ""));
 
-        for (const auto& j_conn : j_connections) {
-            ConnectionInfo conn;
-            conn.id = j_conn["id"];
-            conn.name = j_conn["name"];
-            conn.host = j_conn.value("host", "");
-            conn.port = j_conn.value("port", 22);
-            conn.username = j_conn.value("username", "");
-            conn.folder_id = j_conn.value("folder_id", "");
-            conn.connection_type = j_conn.value("connection_type", "SSH"); // Load connection type, default to SSH
-            connections.push_back(conn);
+                    // SSH specific fields
+                    if (conn.connection_type == "SSH") {
+                        conn.auth_method = Glib::ustring(j_conn.value("auth_method", ""));
+                        conn.password = Glib::ustring(j_conn.value("password", ""));
+                        conn.ssh_key_path = Glib::ustring(j_conn.value("ssh_key_path", ""));
+                        conn.ssh_key_passphrase = Glib::ustring(j_conn.value("ssh_key_passphrase", ""));
+                        conn.additional_ssh_options = Glib::ustring(j_conn.value("additional_ssh_options", ""));
+                    }
+                    connections.push_back(conn);
+                }
+            }
+        } catch (const json::parse_error& e) {
+            std::cerr << "Error parsing connections.json: " << e.what() << std::endl;
+            // Optionally, handle corrupt file (e.g., backup and create new)
         }
-    } catch (const std::exception& e) {
-        std::cerr << "Error loading connections: " << e.what() << std::endl;
+        file.close();
     }
     return connections;
 }
 
 std::vector<FolderInfo> ConnectionManager::load_folders() {
     std::vector<FolderInfo> folders;
-    std::filesystem::path folders_file = get_folders_file(); // Use the helper function
+    std::filesystem::path file_path = get_folders_file();
 
-    if (!std::filesystem::exists(folders_file)) {
+    if (!std::filesystem::exists(file_path)) {
         return folders;
     }
 
-    std::ifstream file(folders_file);
+    std::ifstream file(file_path);
     try {
         json j_folders;
         file >> j_folders;
 
-        for (const auto& item : j_folders) {
+        for (const auto& j_folder : j_folders) {
             FolderInfo folder;
-            folder.id = item.value("id", "");
-            folder.name = item.value("name", "");
-            folder.parent_id = item.value("parent_id", ""); // Load parent_id, default to empty string if not found
+            folder.id = Glib::ustring(j_folder.value("id", ""));
+            folder.name = Glib::ustring(j_folder.value("name", ""));
+            folder.parent_id = Glib::ustring(j_folder.value("parent_id", ""));
             folders.push_back(folder);
         }
-    } catch (const json::exception& e) {
-        std::cerr << "ConnectionManager: Error parsing folders file: " << e.what() << std::endl;
-        if (file.is_open()) file.close();
-        // Optionally, attempt to backup corrupted file and/or return empty list
-        return {}; // Return empty on error
+    } catch (const json::parse_error& e) {
+        std::cerr << "Error parsing folders.json: " << e.what() << std::endl;
     }
-
     return folders;
 }
 
-bool ConnectionManager::delete_connection(const std::string& connection_id) {
+bool ConnectionManager::delete_connection(const Glib::ustring& connection_id) {
     try {
         std::vector<ConnectionInfo> connections = load_connections();
 
-        auto it = std::remove_if(connections.begin(), connections.end(),
-            [&connection_id](const ConnectionInfo& c) { return c.id == connection_id; });
+        connections.erase(
+            std::remove_if(connections.begin(), connections.end(),
+                [&connection_id](const ConnectionInfo& conn) {
+                    return conn.id == connection_id;
+                }),
+            connections.end());
 
-        if (it != connections.end()) {
-            connections.erase(it, connections.end());
+        // Save the modified list back to the file
+        std::filesystem::path file_path = get_connections_file();
+        json j_connections = json::array();
+        for (const auto& conn : connections) {
+            json json_conn;
+            json_conn["id"] = conn.id.raw();
+            json_conn["name"] = conn.name.raw();
+            json_conn["host"] = conn.host.raw();
+            json_conn["port"] = conn.port;
+            json_conn["username"] = conn.username.raw();
+            json_conn["connection_type"] = conn.connection_type.raw();
+            json_conn["folder_id"] = conn.folder_id.raw();
 
-            // Write back to file
-            json j_connections = json::array();
-            for (const auto& conn : connections) {
-                j_connections.push_back({
-                    {"id", conn.id},
-                    {"name", conn.name},
-                    {"host", conn.host},
-                    {"port", conn.port},
-                    {"username", conn.username},
-                    {"folder_id", conn.folder_id},
-                    {"connection_type", conn.connection_type} // Save connection type
-                });
+            if (conn.connection_type == "SSH") {
+                json_conn["auth_method"] = conn.auth_method.raw();
+                json_conn["password"] = conn.password.raw();
+                json_conn["ssh_key_path"] = conn.ssh_key_path.raw();
+                json_conn["ssh_key_passphrase"] = conn.ssh_key_passphrase.raw();
+                json_conn["additional_ssh_options"] = conn.additional_ssh_options.raw();
             }
+            j_connections.push_back(json_conn);
+        }
 
-            std::ofstream file(get_connections_file());
+        std::ofstream file(file_path);
+        if (file.is_open()) {
             file << j_connections.dump(4);
+            file.close();
             return true;
         }
-        return false;
+        return false; // Failed to save after deletion
     } catch (const std::exception& e) {
         std::cerr << "Error deleting connection: " << e.what() << std::endl;
         return false;
     }
 }
 
-// Private helper function for recursive deletion
-void ConnectionManager::delete_folder_recursive(const std::string& folder_id_to_delete, std::vector<FolderInfo>& all_folders, std::vector<ConnectionInfo>& all_connections) {
-    // First, delete all connections directly inside this folder
-    all_connections.erase(
-        std::remove_if(all_connections.begin(), all_connections.end(),
-                       [&](const ConnectionInfo& conn) {
-                           return conn.folder_id == folder_id_to_delete;
-                       }),
-        all_connections.end()
-    );
-
-    // Find sub-folders
-    std::vector<std::string> sub_folder_ids;
+void ConnectionManager::delete_folder_recursive(const Glib::ustring& folder_id_to_delete, std::vector<FolderInfo>& all_folders, std::vector<ConnectionInfo>& all_connections) {
+    // Find sub-folders of the folder to delete
+    std::vector<Glib::ustring> sub_folder_ids;
     for (const auto& folder : all_folders) {
         if (folder.parent_id == folder_id_to_delete) {
             sub_folder_ids.push_back(folder.id);
         }
     }
 
-    // Recursively delete each sub-folder and its contents
+    // Recursively delete sub-folders
     for (const auto& sub_folder_id : sub_folder_ids) {
-        delete_folder_recursive(sub_folder_id, all_folders, all_connections); // Recursive call
+        delete_folder_recursive(sub_folder_id, all_folders, all_connections);
     }
 
-    // Finally, remove the current folder itself from the list of all folders
+    // Delete connections within the current folder_id_to_delete
+    all_connections.erase(
+        std::remove_if(all_connections.begin(), all_connections.end(),
+            [&folder_id_to_delete](const ConnectionInfo& conn) {
+                return conn.folder_id == folder_id_to_delete;
+            }),
+        all_connections.end());
+
+    // Remove the folder itself from all_folders
     all_folders.erase(
         std::remove_if(all_folders.begin(), all_folders.end(),
-                       [&](const FolderInfo& f) {
-                           return f.id == folder_id_to_delete;
-                       }),
-        all_folders.end()
-    );
+            [&folder_id_to_delete](const FolderInfo& folder) {
+                return folder.id == folder_id_to_delete;
+            }),
+        all_folders.end());
 }
 
-bool ConnectionManager::delete_folder(const std::string& folder_id) {
+bool ConnectionManager::delete_folder(const Glib::ustring& folder_id) {
     try {
-        std::vector<FolderInfo> folders = load_folders();
-        std::vector<ConnectionInfo> connections = load_connections();
+        std::vector<FolderInfo> all_folders = load_folders();
+        std::vector<ConnectionInfo> all_connections = load_connections();
 
-        // Check if the target folder actually exists before starting recursive deletion
-        auto it_target_folder = std::find_if(folders.begin(), folders.end(),
-                                         [&folder_id](const FolderInfo& f) { return f.id == folder_id; });
+        size_t initial_folders_size = all_folders.size();
 
-        if (it_target_folder == folders.end()) {
-            // Folder not found, nothing to delete
-            return false;
+        delete_folder_recursive(folder_id, all_folders, all_connections);
+
+        if (all_folders.size() < initial_folders_size) { // Check if any folder was actually removed
+            // Save the modified folders list
+            std::filesystem::path folders_file_path = get_folders_file();
+            json folders_json_array = json::array();
+            for (const auto& folder : all_folders) {
+                folders_json_array.push_back({
+                    {"id", folder.id.raw()},
+                    {"name", folder.name.raw()},
+                    {"parent_id", folder.parent_id.raw()}
+                });
+            }
+            std::ofstream folders_file(folders_file_path);
+            if (!folders_file.is_open()) return false; // Failed to open folders file
+            folders_file << folders_json_array.dump(4);
+            folders_file.close();
+
+            // Save the modified connections list (as connections might have been deleted)
+            std::filesystem::path connections_file_path = get_connections_file();
+            json connections_json_array = json::array();
+            for (const auto& conn : all_connections) {
+                json json_conn;
+                json_conn["id"] = conn.id.raw();
+                json_conn["name"] = conn.name.raw();
+                json_conn["host"] = conn.host.raw();
+                json_conn["port"] = conn.port;
+                json_conn["username"] = conn.username.raw();
+                json_conn["connection_type"] = conn.connection_type.raw();
+                json_conn["folder_id"] = conn.folder_id.raw();
+
+                if (conn.connection_type == "SSH") {
+                    json_conn["auth_method"] = conn.auth_method.raw();
+                    json_conn["password"] = conn.password.raw();
+                    json_conn["ssh_key_path"] = conn.ssh_key_path.raw();
+                    json_conn["ssh_key_passphrase"] = conn.ssh_key_passphrase.raw();
+                    json_conn["additional_ssh_options"] = conn.additional_ssh_options.raw();
+                }
+                connections_json_array.push_back(json_conn);
+            }
+            std::ofstream connections_file(connections_file_path);
+            if (!connections_file.is_open()) return false; // Failed to open connections file
+            connections_file << connections_json_array.dump(4);
+            connections_file.close();
+
+            return true;
         }
-
-        // Call the recursive helper to delete the folder and its contents
-        delete_folder_recursive(folder_id, folders, connections);
-
-        // Save the modified folders list
-        json j_folders = json::array();
-        for (const auto& f : folders) {
-            j_folders.push_back({
-                {"id", f.id},
-                {"name", f.name},
-                {"parent_id", f.parent_id}
-            });
-        }
-        std::ofstream folder_file(get_folders_file());
-        folder_file << j_folders.dump(4);
-
-        // Save the modified connections list
-        json j_connections = json::array();
-        for (const auto& conn : connections) {
-            j_connections.push_back({
-                {"id", conn.id},
-                {"name", conn.name},
-                {"host", conn.host},
-                {"port", conn.port},
-                {"username", conn.username},
-                {"folder_id", conn.folder_id},
-                {"connection_type", conn.connection_type}
-            });
-        }
-        std::ofstream conn_file(get_connections_file());
-        conn_file << j_connections.dump(4);
-
-        return true;
+        return false; // Folder not found or no change made
     } catch (const std::exception& e) {
         std::cerr << "Error deleting folder and its contents: " << e.what() << std::endl;
         return false;
