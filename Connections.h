@@ -29,17 +29,13 @@ struct ConnectionInfo {
     Glib::ustring username;
     Glib::ustring connection_type; // "SSH", "Telnet", "Serial", etc.
     Glib::ustring folder_id; // ID of the parent folder, or empty if top-level
-
-    // SSH Specific Fields - NEW
     Glib::ustring auth_method;          // "Password" or "SSHKey"
     Glib::ustring password;             // SSH password (NOTE: Storing plain text is insecure)
     Glib::ustring ssh_key_path;         // Path to SSH private key file
     Glib::ustring ssh_key_passphrase;   // Passphrase for the SSH private key (if encrypted)
     Glib::ustring additional_ssh_options; // e.g., "-o StrictHostKeyChecking=no"
-
     bool is_folder = false; // Helper to distinguish in combined lists, not directly saved if representing a pure folder.
     Glib::ustring parent_id_col; // Only used by TreeView model logic
-
     ConnectionInfo() : port(0), is_folder(false) {}
 };
 
@@ -86,7 +82,6 @@ public:
         std::vector<FolderInfo> folders = load_folders();
         auto it = std::find_if(folders.begin(), folders.end(),
             [&folder_id](const FolderInfo& f) { return f.id == folder_id; });
-
         return (it != folders.end()) ? it->name : "";
     }
 
@@ -100,7 +95,6 @@ public:
                 folder_connections.push_back(connection);
             }
         }
-
         return folder_connections;
     }
 
@@ -109,14 +103,12 @@ public:
         std::vector<FolderInfo> folders = load_folders();
         auto it = std::find_if(folders.begin(), folders.end(),
             [&folder_name](const FolderInfo& f) { return f.name == folder_name; });
-
         return (it != folders.end()) ? it->id : "";
     }
 
 private:
     // Get the connections directory path
     static std::filesystem::path get_connections_directory();
-
     // Helper methods for file operations
     static std::filesystem::path get_connections_dir();
     static std::filesystem::path get_connections_file();

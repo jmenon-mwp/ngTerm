@@ -23,7 +23,7 @@ std::filesystem::path ConnectionManager::get_folders_file() {
 
 void ConnectionManager::ensure_parent_directory_exists(const std::filesystem::path& file_path) {
     if (!file_path.has_parent_path()) {
-        return; // No parent path to create
+        return;
     }
     std::filesystem::path parent_dir = file_path.parent_path();
     if (!std::filesystem::exists(parent_dir)) {
@@ -34,7 +34,7 @@ void ConnectionManager::ensure_parent_directory_exists(const std::filesystem::pa
 Glib::ustring ConnectionManager::generate_connection_id() {
     uuid_t uuid;
     uuid_generate_random(uuid);
-    char uuid_str[37]; // 36 characters + null terminator
+    char uuid_str[37];
     uuid_unparse_lower(uuid, uuid_str);
     return Glib::ustring(uuid_str);
 }
@@ -42,7 +42,7 @@ Glib::ustring ConnectionManager::generate_connection_id() {
 Glib::ustring ConnectionManager::generate_folder_id() {
     uuid_t uuid;
     uuid_generate_random(uuid);
-    char uuid_str[37]; // 36 characters + null terminator
+    char uuid_str[37];
     uuid_unparse_lower(uuid, uuid_str);
     return Glib::ustring(uuid_str);
 }
@@ -65,11 +65,9 @@ bool ConnectionManager::save_connection(const ConnectionInfo& connection) {
             json_conn["username"] = connection.username.raw();
             json_conn["connection_type"] = connection.connection_type.raw();
             json_conn["folder_id"] = connection.folder_id.raw();
-
-            // SSH specific fields
             if (connection.connection_type == "SSH") {
                 json_conn["auth_method"] = connection.auth_method.raw();
-                json_conn["password"] = connection.password.raw(); // NOTE: Storing plain text is insecure
+                json_conn["password"] = connection.password.raw();
                 json_conn["ssh_key_path"] = connection.ssh_key_path.raw();
                 json_conn["ssh_key_passphrase"] = connection.ssh_key_passphrase.raw();
                 json_conn["additional_ssh_options"] = connection.additional_ssh_options.raw();
@@ -86,7 +84,6 @@ bool ConnectionManager::save_connection(const ConnectionInfo& connection) {
             json_other_conn["username"] = conn.username.raw();
             json_other_conn["connection_type"] = conn.connection_type.raw();
             json_other_conn["folder_id"] = conn.folder_id.raw();
-
             if (conn.connection_type == "SSH") {
                 json_other_conn["auth_method"] = conn.auth_method.raw();
                 json_other_conn["password"] = conn.password.raw();
@@ -108,11 +105,9 @@ bool ConnectionManager::save_connection(const ConnectionInfo& connection) {
         json_conn["username"] = connection.username.raw();
         json_conn["connection_type"] = connection.connection_type.raw();
         json_conn["folder_id"] = connection.folder_id.raw();
-
-        // SSH specific fields
         if (connection.connection_type == "SSH") {
             json_conn["auth_method"] = connection.auth_method.raw();
-            json_conn["password"] = connection.password.raw(); // NOTE: Storing plain text is insecure
+            json_conn["password"] = connection.password.raw();
             json_conn["ssh_key_path"] = connection.ssh_key_path.raw();
             json_conn["ssh_key_passphrase"] = connection.ssh_key_passphrase.raw();
             json_conn["additional_ssh_options"] = connection.additional_ssh_options.raw();
@@ -122,7 +117,7 @@ bool ConnectionManager::save_connection(const ConnectionInfo& connection) {
 
     std::ofstream file(file_path);
     if (file.is_open()) {
-        file << json_array.dump(4); // pretty print JSON
+        file << json_array.dump(4);
         file.close();
         return true;
     }
@@ -193,8 +188,6 @@ std::vector<ConnectionInfo> ConnectionManager::load_connections() {
                     conn.username = Glib::ustring(j_conn.value("username", ""));
                     conn.connection_type = Glib::ustring(j_conn.value("connection_type", ""));
                     conn.folder_id = Glib::ustring(j_conn.value("folder_id", ""));
-
-                    // SSH specific fields
                     if (conn.connection_type == "SSH") {
                         conn.auth_method = Glib::ustring(j_conn.value("auth_method", ""));
                         conn.password = Glib::ustring(j_conn.value("password", ""));
