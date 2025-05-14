@@ -235,11 +235,66 @@ void edit_connection_dialog() {
 
     Gtk::Label password_label("Password:");
     password_label.set_halign(Gtk::ALIGN_START);
+    password_label.set_markup("<span foreground='red'>Password:</span>");
     Gtk::Entry password_entry;
-    password_entry.set_hexpand(true);
     password_entry.set_visibility(false); // Mask password
-    password_entry.set_invisible_char('*');
+    password_entry.set_hexpand(true);
     password_entry.set_text(current_connection.password);
+    // Add security warning tooltip
+    const char* security_warning =
+        "WARNING: Password will be stored in plain text and may be visible in the process list. "
+        "This is inherently insecure. Consider using SSH keys or do not save the password here. "
+        "You will be prompted for the password when connecting.";
+    password_entry.set_tooltip_text(security_warning);
+
+    // Create a tooltip window
+    Gtk::Window* tooltip_window = nullptr;
+
+    // Show tooltip when password field gets focus
+    password_entry.signal_focus_in_event().connect([security_warning, &tooltip_window, &password_entry](GdkEventFocus*) -> bool {
+        if (!tooltip_window) {
+            tooltip_window = new Gtk::Window(Gtk::WINDOW_POPUP);
+            tooltip_window->set_name("tooltip");
+            tooltip_window->set_border_width(2);
+
+            // Create an event box to handle the background color
+            Gtk::EventBox* event_box = Gtk::manage(new Gtk::EventBox());
+            event_box->override_background_color(Gdk::RGBA("orange"));
+
+            Gtk::Label* tooltip_label = Gtk::manage(new Gtk::Label());
+            tooltip_label->set_text(security_warning);
+            tooltip_label->set_line_wrap(true);
+            tooltip_label->set_max_width_chars(40);
+            tooltip_label->set_justify(Gtk::JUSTIFY_LEFT);
+            tooltip_label->set_margin_start(8);
+            tooltip_label->set_margin_end(8);
+            tooltip_label->set_margin_top(4);
+            tooltip_label->set_margin_bottom(4);
+
+            event_box->add(*tooltip_label);
+            tooltip_window->add(*event_box);
+
+            // Set a fixed size for the tooltip
+            tooltip_window->set_default_size(350, 60);
+            tooltip_window->set_resizable(false);
+        }
+
+        int x, y;
+        password_entry.get_window()->get_origin(x, y);
+        int entry_height = password_entry.get_allocation().get_height();
+        // Position tooltip 2 pixels below the password field
+        tooltip_window->move(x, y + entry_height + 2);
+        tooltip_window->show_all();
+        return false;
+    });
+
+    // Hide tooltip when password field loses focus
+    password_entry.signal_focus_out_event().connect([&tooltip_window](GdkEventFocus*) -> bool {
+        if (tooltip_window) {
+            tooltip_window->hide();
+        }
+        return false;
+    });
 
     Gtk::Label ssh_key_label("SSH Key Path:");
     ssh_key_label.set_halign(Gtk::ALIGN_START);
@@ -251,9 +306,8 @@ void edit_connection_dialog() {
     Gtk::Label ssh_key_passphrase_label("SSH Key Passphrase:");
     ssh_key_passphrase_label.set_halign(Gtk::ALIGN_START);
     Gtk::Entry ssh_key_passphrase_entry;
+    ssh_key_passphrase_entry.set_visibility(false); // Mask passphrase
     ssh_key_passphrase_entry.set_hexpand(true);
-    ssh_key_passphrase_entry.set_visibility(false);
-    ssh_key_passphrase_entry.set_invisible_char('*');
     ssh_key_passphrase_entry.set_text(current_connection.ssh_key_passphrase);
 
     // Populate SSH specific fields based on loaded current_connection
@@ -398,17 +452,20 @@ void edit_connection_dialog() {
             if (updated_connection.connection_type == "SSH") {
                 updated_connection.auth_method = auth_method_combo.get_active_text();
                 if (updated_connection.auth_method == "Password") {
-                    // Only update password if the field was actually changed
-                    // (We don't pre-fill it, so any content means it was changed)
-                    if (!password_entry.get_text().empty()) {
-                        updated_connection.password = password_entry.get_text();
-                    }
+                    // Always update the password field with whatever is in the entry
+                    // This ensures empty passwords are saved correctly
+                    updated_connection.password = password_entry.get_text();
+                    updated_connection.ssh_key_path = "";
+                    updated_connection.ssh_key_passphrase = "";
                 } else if (updated_connection.auth_method == "SSHKey") {
+                    updated_connection.password = "";
                     updated_connection.ssh_key_path = ssh_key_path_entry.get_text();
                     updated_connection.ssh_key_passphrase = ssh_key_passphrase_entry.get_text();
                 }
                 updated_connection.additional_ssh_options = ssh_flags_entry.get_text();
             } else {
+                // Clear SSH specific fields if not an SSH connection
+                updated_connection.auth_method = "";
                 updated_connection.password = "";
                 updated_connection.ssh_key_path = "";
                 updated_connection.ssh_key_passphrase = "";
@@ -422,7 +479,9 @@ void edit_connection_dialog() {
             // Revert to save_connection, as update_connection does not exist.
             // The issue is likely within save_connection's update logic.
             if (ConnectionManager::save_connection(updated_connection)) {
-                populate_connections_treeview(connections_liststore, connection_columns, *connections_treeview);
+                if (connections_liststore && connections_treeview) {
+                    populate_connections_treeview(connections_liststore, connection_columns, *connections_treeview);
+                }
             } else {
                 Gtk::MessageDialog err_dialog(dialog, "Failed to save connection.", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true); // Reverted error message
                 err_dialog.run();
@@ -519,9 +578,65 @@ void add_connection_dialog(Gtk::Notebook& notebook) {
 
     Gtk::Label password_label("Password:");
     password_label.set_halign(Gtk::ALIGN_START);
+    password_label.set_markup("<span foreground='red'>Password:</span>");
     Gtk::Entry password_entry;
     password_entry.set_visibility(false); // Mask password
     password_entry.set_hexpand(true);
+    // Add security warning tooltip
+    const char* security_warning =
+    "WARNING: Password will be stored in plain text and may be visible in the process list. "
+    "This is inherently insecure. Consider using SSH keys or do not save the password here. "
+    "You will be prompted for the password when connecting.";
+password_entry.set_tooltip_text(security_warning);
+
+    // Create a tooltip window
+    Gtk::Window* tooltip_window = nullptr;
+
+    // Show tooltip when password field gets focus
+    password_entry.signal_focus_in_event().connect([security_warning, &tooltip_window, &password_entry](GdkEventFocus*) -> bool {
+        if (!tooltip_window) {
+            tooltip_window = new Gtk::Window(Gtk::WINDOW_POPUP);
+            tooltip_window->set_name("tooltip");
+            tooltip_window->set_border_width(2);
+
+            // Create an event box to handle the background color
+            Gtk::EventBox* event_box = Gtk::manage(new Gtk::EventBox());
+            event_box->override_background_color(Gdk::RGBA("orange"));
+
+            Gtk::Label* tooltip_label = Gtk::manage(new Gtk::Label());
+            tooltip_label->set_text(security_warning);
+            tooltip_label->set_line_wrap(true);
+            tooltip_label->set_max_width_chars(40);
+            tooltip_label->set_justify(Gtk::JUSTIFY_LEFT);
+            tooltip_label->set_margin_start(8);
+            tooltip_label->set_margin_end(8);
+            tooltip_label->set_margin_top(4);
+            tooltip_label->set_margin_bottom(4);
+
+            event_box->add(*tooltip_label);
+            tooltip_window->add(*event_box);
+
+            // Set a fixed size for the tooltip
+            tooltip_window->set_default_size(350, 60);
+            tooltip_window->set_resizable(false);
+        }
+
+        int x, y;
+        password_entry.get_window()->get_origin(x, y);
+        int entry_height = password_entry.get_allocation().get_height();
+        // Position tooltip 2 pixels below the password field
+        tooltip_window->move(x, y + entry_height + 2);
+        tooltip_window->show_all();
+        return false;
+    });
+
+    // Hide tooltip when password field loses focus
+    password_entry.signal_focus_out_event().connect([&tooltip_window](GdkEventFocus*) -> bool {
+        if (tooltip_window) {
+            tooltip_window->hide();
+        }
+        return false;
+    });
 
     Gtk::Label ssh_key_label("SSH Key Path:");
     ssh_key_label.set_halign(Gtk::ALIGN_START);
@@ -707,7 +822,6 @@ void add_connection_dialog(Gtk::Notebook& notebook) {
                 new_connection.ssh_key_path = "";
                 new_connection.ssh_key_passphrase = "";
             } else if (new_connection.auth_method == "SSHKey") {
-                std::cout << "ADD DIALOG: Reading from ssh_key_path_entry at address: " << &ssh_key_path_entry << std::endl; // <<< KEEP THIS
                 new_connection.ssh_key_path = ssh_key_path_entry.get_text();
                 new_connection.ssh_key_passphrase = ssh_key_passphrase_entry.get_text();
                 new_connection.password = ""; // Clear password field for hygiene
@@ -722,20 +836,10 @@ void add_connection_dialog(Gtk::Notebook& notebook) {
             new_connection.additional_ssh_options = "";
         }
 
-        // --- DEBUG ---
-        std::cout << "--- DEBUG ADD ---" << std::endl;
-        std::cout << "Saving Connection ID: " << new_connection.id << std::endl;
-        std::cout << "Type: " << new_connection.connection_type << std::endl;
-        if (new_connection.connection_type == "SSH") {
-             std::cout << "Auth Method: " << new_connection.auth_method << std::endl;
-             std::cout << "SSH Key Path (before save): [" << new_connection.ssh_key_path << "]" << std::endl;
-             std::cout << "SSH Key Passphrase (before save): [" << new_connection.ssh_key_passphrase << "]" << std::endl;
-        }
-        std::cout << "---------------" << std::endl;
-        // --- END DEBUG ---
-
         if (ConnectionManager::save_connection(new_connection)) {
-            populate_connections_treeview(connections_liststore, connection_columns, *connections_treeview); // Refresh TreeView
+            if (connections_liststore && connections_treeview) {
+                populate_connections_treeview(connections_liststore, connection_columns, *connections_treeview);
+            }
         } else {
             Gtk::MessageDialog err_dialog(dialog, "Failed to save connection.", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
             err_dialog.run();
@@ -841,7 +945,9 @@ void build_menu(Gtk::Window& parent_window, Gtk::MenuBar& menubar, Gtk::Notebook
 
         if (response == Gtk::RESPONSE_YES) {
             if (ConnectionManager::delete_connection(connection_id)) {
-                populate_connections_treeview(liststore_ref, columns_ref, connections_treeview_ref);
+                if (connections_liststore && connections_treeview) {
+                    populate_connections_treeview(liststore_ref, columns_ref, connections_treeview_ref);
+                }
             } else {
                 Gtk::MessageDialog error_dialog(parent_window, "Delete Failed", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
                 error_dialog.set_secondary_text("Could not delete the connection: '" + connection_name + "'.");
@@ -987,7 +1093,9 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
                     confirmation_dialog.set_secondary_text("Are you sure you want to delete the connection '" + conn_name + "'?");
                     if (confirmation_dialog.run() == Gtk::RESPONSE_YES) {
                         if (ConnectionManager::delete_connection(conn_id)) {
-                            populate_connections_treeview(liststore_ref, columns_ref, connections_treeview_ref);
+                            if (connections_liststore && connections_treeview) {
+                                populate_connections_treeview(liststore_ref, columns_ref, connections_treeview_ref);
+                            }
                         } else {
                             Gtk::MessageDialog error_dialog(parent_window, "Error", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
                             error_dialog.set_secondary_text("Could not delete the connection '" + conn_name + "'.");
@@ -1398,39 +1506,44 @@ int main(int argc, char* argv[]) {
                 std::vector<std::string> command_args_str;
 
                 if (connection_type_str == "SSH") {
-                    ConnectionInfo conn_info;
-                    conn_info.id = static_cast<Glib::ustring>((*iter)[connection_columns.id]);
-                    conn_info.name = connection_name;
-                    conn_info.host = static_cast<Glib::ustring>((*iter)[connection_columns.host]);
-                    Glib::ustring port_ustr = (*iter)[connection_columns.port];
-                    if (!port_ustr.empty()) {
-                        try {
-                            conn_info.port = std::stoi(port_ustr.raw());
-                        } catch (const std::exception& e) {
-                            conn_info.port = 0;
-                            std::cerr << "Error converting port for SSH: " << port_ustr << " - " << e.what() << std::endl;
+                    // Get the connection ID
+                    Glib::ustring conn_id = static_cast<Glib::ustring>((*iter)[connection_columns.id]);
+
+                    // Load the full saved connection details
+                    std::vector<ConnectionInfo> saved_connections = ConnectionManager::load_connections();
+                    auto it = std::find_if(saved_connections.begin(), saved_connections.end(),
+                        [&conn_id](const ConnectionInfo& ci) { return ci.id == conn_id; });
+
+                    if (it != saved_connections.end()) {
+                        // Use the saved connection info which includes password/auth details
+                        std::vector<std::string> ssh_command_parts = Ssh::generate_ssh_command_args(*it);
+
+                        // Build command args vector
+                        command_args_str.clear();
+                        command_args_str.push_back("/bin/bash");
+                        command_args_str.push_back("-c");
+
+                        // Build the SSH command string
+                        std::string ssh_cmd;
+                        for (const auto& part : ssh_command_parts) {
+                            if (!ssh_cmd.empty()) {
+                                ssh_cmd += " ";
+                            }
+                            // Quote the part if it contains spaces or special characters
+                            if (part.find_first_of(" \"'$\\") != std::string::npos) {
+                                ssh_cmd += "'" + part + "'";
+                            } else {
+                                ssh_cmd += part;
+                            }
                         }
+
+                        // Add read prompt
+                        ssh_cmd += "; read -p '[ngTerm] SSH session ended. Press any key to close this tab...' -n 1 -s";
+                        command_args_str.push_back(ssh_cmd);
                     } else {
-                        conn_info.port = 0;
+                        std::cerr << "Error: Could not find connection details for ID: " << conn_id << std::endl;
+                        return;
                     }
-                    conn_info.username = static_cast<Glib::ustring>((*iter)[connection_columns.username]);
-                    conn_info.connection_type = connection_type_str;
-
-                    std::vector<std::string> ssh_command_parts = Ssh::generate_ssh_command_args(conn_info);
-                    std::string full_ssh_command_str;
-                    for (size_t i = 0; i < ssh_command_parts.size(); ++i) {
-                        full_ssh_command_str += ssh_command_parts[i];
-                        if (i < ssh_command_parts.size() - 1) {
-                            full_ssh_command_str += " "; // Add spaces between parts
-                        }
-                    }
-
-                    full_ssh_command_str += "; read -p \'[ngTerm] SSH session ended. Press any key to close this tab...\' -n 1 -s";
-
-                    command_args_str.clear();
-                    command_args_str.push_back("/bin/bash");
-                    command_args_str.push_back("-c");
-                    command_args_str.push_back(full_ssh_command_str); // Pass the full ssh command as a single quoted argument to -c
                 } else { // Non-SSH connection type
                     command_args_str.clear();
                     command_args_str.push_back("/bin/bash");
