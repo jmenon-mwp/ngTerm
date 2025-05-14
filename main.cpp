@@ -110,7 +110,7 @@ void on_connection_selection_changed() {
 }
 
 // Function to handle editing a connection
-void on_edit_connection_activate() {
+void edit_connection_dialog() {
     if (!connections_treeview || !connections_liststore || !edit_connection_menu_item) return;
 
     Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview->get_selection();
@@ -231,7 +231,6 @@ void on_edit_connection_activate() {
     auth_method_combo.set_hexpand(true);
     auth_method_combo.append("Password", "Password");
     auth_method_combo.append("SSHKey", "SSHKey");
-    std::cout << "AUTH METHOD: " << current_connection.auth_method << std::endl;
     auth_method_combo.set_active_text(current_connection.auth_method);
 
     Gtk::Label password_label("Password:");
@@ -244,15 +243,10 @@ void on_edit_connection_activate() {
 
     Gtk::Label ssh_key_label("SSH Key Path:");
     ssh_key_label.set_halign(Gtk::ALIGN_START);
-    // Gtk::Box ssh_key_box(Gtk::ORIENTATION_HORIZONTAL, 5);
     Gtk::Entry ssh_key_path_entry;
     ssh_key_path_entry.set_hexpand(true);
     ssh_key_path_entry.set_editable(true);
     Gtk::Button ssh_key_browse_button("Browse...");
-
-    // ssh_key_box.pack_start(ssh_key_path_entry, Gtk::PACK_EXPAND_WIDGET);
-    // ssh_key_box.pack_start(ssh_key_browse_button, Gtk::PACK_SHRINK);
-    // ssh_key_path_entry.set_text(current_connection.ssh_key_path);
 
     Gtk::Label ssh_key_passphrase_label("SSH Key Passphrase:");
     ssh_key_passphrase_label.set_halign(Gtk::ALIGN_START);
@@ -438,7 +432,7 @@ void on_edit_connection_activate() {
 }
 
 // Function to handle adding a new connection
-void on_add_connection_activated(Gtk::Notebook& notebook) {
+void add_connection_dialog(Gtk::Notebook& notebook) {
     Gtk::Dialog dialog("Add New Connection", true /* modal */);
     dialog.set_default_size(450, 0); // Adjusted default width, height will adapt
 
@@ -777,7 +771,7 @@ void build_menu(Gtk::Window& parent_window, Gtk::MenuBar& menubar, Gtk::Notebook
 
     connections_submenu->append(*add_connection_item);
     edit_connection_menu_item = Gtk::manage(new Gtk::MenuItem("Edit Connection", true)); // Changed from _Connection
-    edit_connection_menu_item->signal_activate().connect(sigc::ptr_fun(&on_edit_connection_activate)); // Connect to handler
+    edit_connection_menu_item->signal_activate().connect(sigc::ptr_fun(&edit_connection_dialog)); // Connect to handler
     edit_connection_menu_item->set_sensitive(false); // Initially disabled
     connections_submenu->append(*edit_connection_menu_item);
 
@@ -818,7 +812,7 @@ void build_menu(Gtk::Window& parent_window, Gtk::MenuBar& menubar, Gtk::Notebook
         FolderOps::delete_folder(parent_window, connections_treeview_ref, liststore_ref, columns_ref);
     });
 
-    add_connection_item->signal_activate().connect(sigc::bind(sigc::ptr_fun(&on_add_connection_activated), std::ref(notebook)));
+    add_connection_item->signal_activate().connect(sigc::bind(sigc::ptr_fun(&add_connection_dialog), std::ref(notebook)));
     delete_connection_item->signal_activate().connect([&connections_treeview_ref, &liststore_ref, &columns_ref, &parent_window]() { // Added parent_window capture
         Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview_ref.get_selection();
         Gtk::TreeModel::iterator iter = selection->get_selected();
@@ -953,7 +947,7 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
     add_conn_button->set_margin_end(1);
     add_conn_button->set_margin_top(0);
     add_conn_button->set_margin_bottom(0);
-    add_conn_button->signal_clicked().connect(sigc::bind(sigc::ptr_fun(&on_add_connection_activated), std::ref(notebook)));
+    add_conn_button->signal_clicked().connect(sigc::bind(sigc::ptr_fun(&add_connection_dialog), std::ref(notebook)));
     toolbar->append(*add_conn_button);
 
     // Edit Connection Button
@@ -965,7 +959,7 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
     edit_conn_button->set_margin_end(1);
     edit_conn_button->set_margin_top(0);
     edit_conn_button->set_margin_bottom(0);
-    edit_conn_button->signal_clicked().connect(sigc::ptr_fun(&on_edit_connection_activate));
+    edit_conn_button->signal_clicked().connect(sigc::ptr_fun(&edit_connection_dialog));
     edit_connection_menu_item_toolbar = edit_conn_button; // Assign to global pointer
     toolbar->append(*edit_conn_button);
 
@@ -1006,9 +1000,9 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
                     info_dialog.run();
                 }
             } else {
-                 Gtk::MessageDialog info_dialog(parent_window, "No Selection", false, Gtk::MESSAGE_INFO, Gtk::BUTTONS_OK, true);
-                 info_dialog.set_secondary_text("Please select an item to delete.");
-                 info_dialog.run();
+                Gtk::MessageDialog info_dialog(parent_window, "No Selection", false, Gtk::MESSAGE_INFO, Gtk::BUTTONS_OK, true);
+                info_dialog.set_secondary_text("Please select an item to delete.");
+                info_dialog.run();
             }
         }
     });
@@ -1057,17 +1051,6 @@ void populate_connections_treeview(Glib::RefPtr<Gtk::TreeStore>& liststore, Conn
     std::vector<FolderInfo> folders = ConnectionManager::load_folders();
     std::vector<ConnectionInfo> connections = ConnectionManager::load_connections();
 
-    // Optional Debugging Output (can be uncommented if needed)
-    // std::cout << "Debug: Folders loaded: " << folders.size() << std::endl;
-    // for(const auto& f : folders) {
-    //     std::cout << "  Folder ID: " << f.id << ", Name: " << f.name << ", Parent ID: " << f.parent_id << std::endl;
-    // }
-    // std::cout << "Debug: Connections loaded: " << connections.size() << std::endl;
-    // for(const auto& c : connections) {
-    //     std::cout << "  Conn ID: " << c.id << ", Name: " << c.name << ", Folder ID: " << c.folder_id << std::endl;
-    // }
-
-    // Map to store parent iterators for folders: maps folder_id to its Gtk::TreeModel::iterator
     std::map<std::string, Gtk::TreeModel::iterator> folder_iters;
     // Map to store children of each parent: maps parent_id to a vector of pointers to FolderInfo
     std::map<std::string, std::vector<FolderInfo*>> folder_children_map;
