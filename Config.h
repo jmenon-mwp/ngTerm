@@ -3,25 +3,40 @@
 
 #include <string>
 #include <filesystem>
-#include <fstream> // For std::ofstream, std::ifstream
-#include <iostream> // For std::cerr, std::cout
-#include <cstdlib> // For std::getenv
+#include <fstream>
+#include <iostream>
+#include <cstdlib>
 #include <nlohmann/json.hpp>
+#include <gtkmm.h>
 
 // Use the nlohmann::json namespace
 using json = nlohmann::json;
 
-// Function to ensure the configuration directory and a default config file exist.
-// Creates a default config if one isn't present.
-void manage_config();
+class Config {
+public:
+    // Initialize configuration system
+    static void init();
 
-// Function to read configuration from ngTerm.json
-// Returns a json object containing the configuration.
-// If the file doesn't exist or an error occurs, returns a default configuration.
-json read_config();
+    // Get the current configuration
+    static const json& get();
 
-// Function to save configuration to ngTerm.json
-// Takes a const json reference to the configuration object to be saved.
-void save_config(const json& config);
+    // Update and save configuration
+    static void update(const json& new_config);
+
+    // Configuration getters with default values
+    static bool get_always_new_connection();
+    static bool get_save_window_coords();
+
+    // Function to show and handle the preferences dialog
+    // Returns true if configuration was changed, false otherwise
+    static bool show_preferences_dialog(Gtk::Window& parent_window);
+
+private:
+    static json config;
+    static void load_config();
+    static void save_config();
+    static std::filesystem::path get_config_path();
+    static void ensure_config_dir();
+};
 
 #endif // CONFIG_H

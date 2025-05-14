@@ -962,10 +962,8 @@ void build_menu(Gtk::Window& parent_window, Gtk::MenuBar& menubar, Gtk::Notebook
         }
     });
 
-    preferences_item->signal_activate().connect([&](){
-        Gtk::MessageDialog dialog("Preferences", false, Gtk::MESSAGE_INFO, Gtk::BUTTONS_OK, true);
-        dialog.set_secondary_text("Preferences dialog not implemented yet.");
-        dialog.run();
+    preferences_item->signal_activate().connect([&parent_window]() {
+        Config::show_preferences_dialog(parent_window);
     });
 
     // Connect About handler
@@ -974,10 +972,9 @@ void build_menu(Gtk::Window& parent_window, Gtk::MenuBar& menubar, Gtk::Notebook
         about_dialog.set_program_name("ngTerm");
         about_dialog.set_version("0.1.0");
         about_dialog.set_comments("NextGen terminal application with connection management");
-        about_dialog.set_copyright(" 2025 Jayan Menon");
+        about_dialog.set_copyright("© 2025, Jayan Menon");
         about_dialog.set_website("https://github.com/jmenon-mwp/ngTerm");
         about_dialog.set_website_label("Project Homepage");
-
         about_dialog.run();
     });
 }
@@ -1330,6 +1327,25 @@ int main(int argc, char* argv[]) {
     // Initialize the GTK+ application
     Gtk::Main kit(argc, argv);
 
+    // Initialize configuration
+    Config::init();
+
+    // Create the main window
+    Gtk::Window window;
+    window.set_title("ngTerm");
+
+    // Set initial window size from config
+    const auto& config = Config::get();
+    window.set_default_size(
+        config.value("window_width", 1024),
+        config.value("window_height", 768)
+    );
+
+    // If we have saved coordinates, use them
+    if (config.contains("window_x") && config.contains("window_y")) {
+        window.move(config["window_x"], config["window_y"]);
+    }
+
     // --- Instantiate global GTK widgets AFTER Gtk::Main ---
     connections_treeview = new Gtk::TreeView();
     info_frame = new Gtk::Frame();
@@ -1359,16 +1375,6 @@ int main(int argc, char* argv[]) {
     port_value_label->set_xalign(0.0f); // Align text to the left within the label
     port_value_label->set_valign(Gtk::ALIGN_START); // Align content to the top
     // --- End of instantiation ---
-
-    // Read configuration
-    json config = read_config();
-
-    // Create the main window
-    Gtk::Window window;
-    window.set_title("ngTerm");
-
-    // Set the window size based on the configuration
-    window.set_default_size(config["window_width"], config["window_height"]);
 
     // Create a vertical box to hold the main content
     Gtk::VBox main_vbox(false, 0);
@@ -1480,25 +1486,25 @@ int main(int argc, char* argv[]) {
                 Glib::ustring conn_name = row[connection_columns.name];
 
                 // Check if this connection is already open
-                auto it = open_connections.find(conn_id.raw());
-                if (it != open_connections.end()) {
-                    // Connection is already open, switch to its tab
-                    int tab_index = it->second;
-                    if (tab_index >= 0 && tab_index < notebook.get_n_pages()) {
-                        notebook.set_current_page(tab_index);
-                        // Get the terminal widget and focus it
-                        if (Gtk::Widget* page = notebook.get_nth_page(tab_index)) {
-                            if (GtkWidget* terminal = GTK_WIDGET(VTE_TERMINAL(page->gobj()))) {
-                                gtk_widget_grab_focus(terminal);
+                if (!Config::get_always_new_connection()) {
+                    // Try to find an existing tab for this connection
+                    for (int i = 0; i < notebook.get_n_pages(); ++i) {
+                        Gtk::Widget* page = notebook.get_nth_page(i);
+                        Glib::ustring tab_text = notebook.get_tab_label_text(*page);
+
+                        // If we find a matching tab, switch to it and return
+                        if (tab_text == conn_name) {
+                            notebook.set_current_page(i);
+                            // Get the terminal widget and focus it
+                            if (Gtk::Widget* page = notebook.get_nth_page(i)) {
+                                if (GtkWidget* terminal = GTK_WIDGET(VTE_TERMINAL(page->gobj()))) {
+                                    gtk_widget_grab_focus(terminal);
+                                }
                             }
+                            return;
                         }
-                        return;
-                    } else {
-                        // Tab no longer exists, remove from tracking
-                        open_connections.erase(it);
                     }
                 }
-
                 // Create new terminal for the connection
                 GtkWidget* terminal = vte_terminal_new();
                 vte_terminal_set_scrollback_lines(VTE_TERMINAL(terminal), 10000);
@@ -1574,37 +1580,38 @@ int main(int argc, char* argv[]) {
     });
 
     // Add resize event handler to save window dimensions
-    window.signal_size_allocate().connect([&window, &config](Gtk::Allocation& allocation) {
-        int width, height;
-        window.get_size(width, height);
+    window.signal_size_allocate().connect([&window](Gtk::Allocation& allocation) {
+        if (Config::get_save_window_coords()) {
+            int width = allocation.get_width();
+            int height = allocation.get_height();
 
-        // Only save if dimensions have changed
-        if (config["window_width"] != width || config["window_height"] != height) {
-            // Update window dimensions in config
-            config["window_width"] = width;
-            config["window_height"] = height;
-
-            // Save updated configuration
-            save_config(config);
+            // Get current config and update it
+            json new_config = Config::get();
+            if (new_config["window_width"] != width || new_config["window_height"] != height) {
+                new_config["window_width"] = width;
+                new_config["window_height"] = height;
+                Config::update(new_config);
+            }
         }
     });
 
     // Fallback resize event handler
-    window.signal_configure_event().connect([&window, &config](GdkEventConfigure* event) {
-        int width, height;
-        window.get_size(width, height);
+    window.signal_configure_event().connect([&window](GdkEventConfigure* event) {
+        if (Config::get_save_window_coords()) {
+            // Get current config
+            json new_config = Config::get();
 
-        // Only save if dimensions have changed
-        if (config["window_width"] != width || config["window_height"] != height) {
-            // Update window dimensions in config
-            config["window_width"] = width;
-            config["window_height"] = height;
+            // Update window coordinates
+            int x, y;
+            window.get_position(x, y);
 
-            // Save updated configuration
-            save_config(config);
+            // Save the new coordinates
+            new_config["window_x"] = x;
+            new_config["window_y"] = y;
+            new_config["window_width"] = event->width;
+            new_config["window_height"] = event->height;
+            Config::update(new_config);
         }
-
-        // Allow event to propagate
         return false;
     });
 
