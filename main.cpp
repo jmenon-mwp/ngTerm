@@ -1147,9 +1147,8 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
     vbox->pack_start(left_scrolled_window, Gtk::PACK_EXPAND_WIDGET); // ScrolledWindow (with TreeView) below toolbar, expands
     vbox->show(); // Explicitly show the vertical box
 
-    // Add the VBox (toolbar + scrolled_window) to the Frame
-    left_frame.add(*vbox);
-    left_frame.show_all(); // Explicitly show the frame and all its new children
+    // Show the frame and all its children
+    left_frame.show_all();
 }
 
 // Function to build the right frame
@@ -1395,69 +1394,66 @@ int main(int argc, char* argv[]) {
     main_vbox.pack_start(main_hpaned, true, true, 0);
 
     // Left frame for connections TreeView and Info Section
-    Gtk::VBox left_pane_vbox(false, 5); // VBox for TreeView and Info Section, with spacing
+    Gtk::Box* left_side_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
 
     // Instantiate the Frame that build_leftFrame will populate
     Gtk::Frame left_frame_for_toolbar_and_treeview;
     // ScrolledWindow for TreeView - will be passed to build_leftFrame
     Gtk::ScrolledWindow connections_scrolled_window;
-    // connections_scrolled_window.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC); // build_leftFrame handles this
 
     // Call build_leftFrame to populate left_frame_for_toolbar_and_treeview
-    // It will add connections_scrolled_window (containing the treeview) and the toolbar to this frame.
     build_leftFrame(window, left_frame_for_toolbar_and_treeview, connections_scrolled_window,
                     *connections_treeview, connections_liststore, connection_columns, notebook);
-
-    // Add the populated frame (which now contains the toolbar and treeview) to the left_pane_vbox
-    left_pane_vbox.pack_start(left_frame_for_toolbar_and_treeview, Gtk::PACK_EXPAND_WIDGET);
 
     // Setup the Info Frame
     Gtk::Label* frame_title_label = Gtk::manage(new Gtk::Label());
     frame_title_label->set_markup("<b>Connection Information</b>");
-    info_frame->set_label_widget(*frame_title_label); // Use ->
-    info_frame->set_shadow_type(Gtk::SHADOW_ETCHED_IN); // Use ->
-    info_frame->set_border_width(5); // Use ->
+    info_frame->set_label_widget(*frame_title_label);
+    info_frame->set_shadow_type(Gtk::SHADOW_ETCHED_IN);
+    info_frame->set_border_width(5);
 
     // Ensure info_frame is empty before adding info_grid
     Gtk::Widget* current_info_child = info_frame->get_child();
     if (current_info_child) {
-        info_frame->remove(); // Correct: Gtk::Bin::remove() takes no arguments
+        info_frame->remove();
     }
-    info_frame->add(*info_grid); // Add the global info_grid to the global info_frame
-    left_pane_vbox.pack_start(*info_frame, false, true, 0); // expand=false, fill=true horizontally
+    info_frame->add(*info_grid);
 
     // Add labels to the grid - Type, Hostname, Port order
-    Gtk::Label type_label; // Local title label
+    Gtk::Label type_label;
     type_label.set_markup("<b>Type:</b>");
     type_label.set_halign(Gtk::ALIGN_START);
-    type_label.set_valign(Gtk::ALIGN_START); // Align content to the top
-    info_grid->attach(type_label, 0, 0, 1, 1); // Row 0
-    type_value_label->set_halign(Gtk::ALIGN_START); // Use ->
-    info_grid->attach(*type_value_label, 1, 0, 1, 1); // Use -> for info_grid, dereference global label, Row 0
+    type_label.set_valign(Gtk::ALIGN_START);
+    info_grid->attach(type_label, 0, 0, 1, 1);
+    type_value_label->set_halign(Gtk::ALIGN_START);
+    info_grid->attach(*type_value_label, 1, 0, 1, 1);
 
-    Gtk::Label host_label; // Local title label
+    Gtk::Label host_label;
     host_label.set_markup("<b>Hostname:</b>");
     host_label.set_halign(Gtk::ALIGN_START);
-    host_label.set_valign(Gtk::ALIGN_START); // Align content to the top
-    info_grid->attach(host_label, 0, 1, 1, 1); // Row 1
-    host_value_label->set_halign(Gtk::ALIGN_START); // Use ->
-    info_grid->attach(*host_value_label, 1, 1, 1, 1); // Use -> for info_grid, dereference global label, Row 1
+    host_label.set_valign(Gtk::ALIGN_START);
+    info_grid->attach(host_label, 0, 1, 1, 1);
+    host_value_label->set_halign(Gtk::ALIGN_START);
+    info_grid->attach(*host_value_label, 1, 1, 1, 1);
 
-    Gtk::Label port_label; // Local title label
+    Gtk::Label port_label;
     port_label.set_markup("<b>Port:</b>");
     port_label.set_halign(Gtk::ALIGN_START);
-    port_label.set_valign(Gtk::ALIGN_START); // Align content to the top
-    info_grid->attach(port_label, 0, 2, 1, 1); // Row 2
-    port_value_label->set_halign(Gtk::ALIGN_START); // Use ->
-    info_grid->attach(*port_value_label, 1, 2, 1, 1); // Use -> for info_grid, dereference global label, Row 2
+    port_label.set_valign(Gtk::ALIGN_START);
+    info_grid->attach(port_label, 0, 2, 1, 1);
+    port_value_label->set_halign(Gtk::ALIGN_START);
+    info_grid->attach(*port_value_label, 1, 2, 1, 1);
 
-    // Pack the left_pane_vbox (TreeView + Info) into the HPaned
-    main_hpaned.add1(left_pane_vbox);
+    // Pack both frames into the left side box
+    left_side_box->pack_start(left_frame_for_toolbar_and_treeview, Gtk::PACK_EXPAND_WIDGET);
+    left_side_box->pack_start(*info_frame, false, true, 0);
+
+    // Add the box containing both frames to the HPaned
+    main_hpaned.add1(*left_side_box);
 
     // Right frame for notebook (terminals)
-    main_hpaned.add2(notebook); // Add notebook directly
-
-    main_hpaned.set_position(250); // Initial position of the divider
+    main_hpaned.add2(notebook);
+    main_hpaned.set_position(250);
 
     // Connections TreeView setup
     // connections_treeview->set_model(connections_liststore); // Already done after liststore creation
