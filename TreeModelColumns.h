@@ -15,7 +15,12 @@ struct ConnectionColumns : public Gtk::TreeModelColumnRecord {
         add(port);
         add(username);
         add(connection_type);
-        add(parent_id_col); // Add parent_id_col here
+        add(parent_id_col);
+        add(auth_method);
+        add(password);
+        add(ssh_key_path);
+        add(ssh_key_passphrase);
+        add(additional_ssh_options);
     }
 
     Gtk::TreeModelColumn<Glib::ustring> name;            // Name of folder or connection
@@ -23,10 +28,15 @@ struct ConnectionColumns : public Gtk::TreeModelColumnRecord {
     Gtk::TreeModelColumn<bool> is_folder;                // True if it's a folder
     Gtk::TreeModelColumn<bool> is_connection;            // True if it's a connection
     Gtk::TreeModelColumn<Glib::ustring> host;            // Hostname or IP address
-    Gtk::TreeModelColumn<Glib::ustring> port;            // Port number (stored as string)
+    Gtk::TreeModelColumn<int> port;                      // Port number
     Gtk::TreeModelColumn<Glib::ustring> username;        // Username
     Gtk::TreeModelColumn<Glib::ustring> connection_type; // Connection type (e.g., SSH, Telnet)
     Gtk::TreeModelColumn<Glib::ustring> parent_id_col;   // Parent ID (for folders and connections)
+    Gtk::TreeModelColumn<Glib::ustring> auth_method;     // Authentication method (Password or SSHKey)
+    Gtk::TreeModelColumn<Glib::ustring> password;        // SSH password (if using password auth)
+    Gtk::TreeModelColumn<Glib::ustring> ssh_key_path;    // Path to SSH key file
+    Gtk::TreeModelColumn<Glib::ustring> ssh_key_passphrase; // SSH key passphrase
+    Gtk::TreeModelColumn<Glib::ustring> additional_ssh_options; // Additional SSH options
 };
 
 #endif // TREEMODELCOLUMNS_H

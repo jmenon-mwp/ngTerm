@@ -20,10 +20,11 @@
 #include "Ssh.h" // Include Ssh.h
 #include "Config.h" // Include the new Config.h
 #include <sys/wait.h> // For wait status macros (WIFEXITED, WEXITSTATUS, etc.)
+#include <map>
 
 using json = nlohmann::json;
 
-// Global TreeView, Model, and Columns
+// Global variables
 Gtk::TreeView* connections_treeview = nullptr;
 Glib::RefPtr<Gtk::TreeStore> connections_liststore; // Stays as RefPtr
 ConnectionColumns connection_columns; // Use the custom ConnectionColumns struct
@@ -45,6 +46,9 @@ Gtk::ToolButton* delete_folder_menu_item_toolbar = nullptr;
 Gtk::ToolButton* edit_connection_menu_item_toolbar = nullptr;
 Gtk::ToolButton* delete_connection_menu_item_toolbar = nullptr;
 
+// Track open connections and their tab indices
+std::map<std::string, int> open_connections; // Maps connection ID to tab index
+
 // Function to handle selection changes in the TreeView
 void on_connection_selection_changed() {
     if (!connections_treeview || !host_value_label || !type_value_label || !port_value_label) return; // Guard against null pointers
@@ -63,7 +67,9 @@ void on_connection_selection_changed() {
             if (is_connection) {
                 host_value_label->set_text(row[connection_columns.host]);
                 type_value_label->set_text(row[connection_columns.connection_type]);
-                port_value_label->set_text(row[connection_columns.port]);
+                // Convert port to string for display
+                int port = row[connection_columns.port];
+                port_value_label->set_text(port > 0 ? std::to_string(port) : "");
                 is_connection_selected = true;
             } else if (is_folder) {
                 host_value_label->set_text("Folder Selected");
@@ -400,9 +406,9 @@ void edit_connection_dialog() {
             else if (selected_type == "Telnet") port_entry.set_text("23");
             else if (selected_type == "VNC") port_entry.set_text("5900");
             else if (selected_type == "RDP") port_entry.set_text("3389");
-            else port_entry.set_text("");
+            else port_entry.set_text(""); // Clear if old was default and new has no default
         }
-        update_visibility();
+        update_visibility(); // Call after potentially changing connection type
     });
 
     auth_method_combo.signal_changed().connect(update_visibility);
@@ -1198,7 +1204,7 @@ void populate_connections_treeview(Glib::RefPtr<Gtk::TreeStore>& liststore, Conn
                 row[cols.is_folder] = true;
                 row[cols.is_connection] = false;
                 row[cols.host] = ""; // Folders don't have host/port etc.
-                row[cols.port] = "";
+                row[cols.port] = 0; // Use 0 for empty port
                 row[cols.username] = "";
                 row[cols.connection_type] = "";
 
@@ -1234,7 +1240,7 @@ void populate_connections_treeview(Glib::RefPtr<Gtk::TreeStore>& liststore, Conn
                     row[cols.parent_id_col] = ""; // Treat as root, clear its original parent_id for display
                     row[cols.is_folder] = true;
                     row[cols.is_connection] = false;
-                    row[cols.host] = ""; row[cols.port] = ""; row[cols.username] = ""; row[cols.connection_type] = "";
+                    row[cols.host] = ""; row[cols.port] = 0; row[cols.username] = ""; row[cols.connection_type] = "";
 
                     folder_iters[folder.id] = current_iter; // Store the obtained iterator
                     added_folder_ids.insert(folder.id);
@@ -1275,7 +1281,7 @@ void populate_connections_treeview(Glib::RefPtr<Gtk::TreeStore>& liststore, Conn
         conn_row[cols.is_folder] = false;
         conn_row[cols.is_connection] = true;
         conn_row[cols.host] = connection.host;
-        conn_row[cols.port] = connection.port > 0 ? std::to_string(connection.port) : "";
+        conn_row[cols.port] = connection.port; // Already an int
         conn_row[cols.username] = connection.username;
         conn_row[cols.connection_type] = connection.connection_type;
         conn_row[cols.parent_id_col] = connection.folder_id; // For connections, parent_id_col stores their folder_id
@@ -1291,33 +1297,34 @@ struct TerminalData {
 };
 
 // Callback function for VTE's "child-exited" signal
-static void on_terminal_child_exited(GtkWidget* widget, gint status, gpointer user_data) {
+void on_terminal_child_exited(GtkWidget* widget, gint status, gpointer user_data) {
     TerminalData* term_data = static_cast<TerminalData*>(user_data);
+    if (!term_data) return;
 
-    // Log the exit status
-    if (WIFEXITED(status)) {
-        int exit_code = WEXITSTATUS(status);
-        if (exit_code != 0) {
-            std::cerr << "  WARNING: Terminal child process exited with non-zero status: " << exit_code << std::endl;
-        }
-    } else if (WIFSIGNALED(status)) {
-        std::cerr << "  ERROR: Terminal child process terminated by signal: " << WTERMSIG(status) << std::endl;
-    } else {
-        std::cerr << "  INFO: Terminal child process exited with unusual status: " << status << std::endl;
-    }
-
-    auto idle_cleanup_callback = [](gpointer data_to_cleanup) -> gboolean {
-        TerminalData* td = static_cast<TerminalData*>(data_to_cleanup);
+    // Schedule cleanup for the next idle moment
+    g_idle_add([](gpointer data) -> gboolean {
+        TerminalData* td = static_cast<TerminalData*>(data);
         if (td->notebook && td->notebook->get_n_pages() > td->page_num) {
             Gtk::Widget* page_widget = td->notebook->get_nth_page(td->page_num);
-            if (page_widget) { // Check if the page still exists
+            if (page_widget) {
+                // Remove the connection from our tracking map
+                for (auto it = open_connections.begin(); it != open_connections.end(); ) {
+                    if (it->second == td->page_num) {
+                        it = open_connections.erase(it);
+                    } else {
+                        // Update indices for tabs that come after this one
+                        if (it->second > td->page_num) {
+                            it->second--;
+                        }
+                        ++it;
+                    }
+                }
                 td->notebook->remove_page(td->page_num);
             }
         }
         delete td;
-        return FALSE;
-    };
-    g_idle_add(idle_cleanup_callback, term_data);
+        return G_SOURCE_REMOVE;
+    }, term_data);
 }
 
 int main(int argc, char* argv[]) {
@@ -1461,120 +1468,113 @@ int main(int argc, char* argv[]) {
     populate_connections_treeview(connections_liststore, connection_columns, *connections_treeview);
 
     // Add double-click event handler
-    connections_treeview->signal_row_activated().connect([&notebook](const Gtk::TreeModel::Path& path, Gtk::TreeViewColumn*) {
-        if (!connections_liststore) return;
-        Gtk::TreeModel::iterator iter = connections_liststore->get_iter(path);
+    connections_treeview->signal_row_activated().connect([&notebook](const Gtk::TreeModel::Path& path, Gtk::TreeViewColumn* column) {
+        auto model = connections_treeview->get_model();
+        auto iter = model->get_iter(path);
         if (iter) {
-            bool is_folder = (*iter)[connection_columns.is_folder];
+            Gtk::TreeModel::Row row = *iter;
+            bool is_folder = row[connection_columns.is_folder];
             if (is_folder) {
                 return; // Do nothing if a folder is double-clicked
             }
 
-            bool is_connection = (*iter)[connection_columns.is_connection];
+            bool is_connection = row[connection_columns.is_connection];
             if (is_connection) {
-                Glib::ustring connection_name = static_cast<Glib::ustring>((*iter)[connection_columns.name]);
-                Glib::ustring conn_type_ustring = static_cast<Glib::ustring>((*iter)[connection_columns.connection_type]);
-                std::string connection_type_str = conn_type_ustring.raw();
+                Glib::ustring conn_id = row[connection_columns.id];
+                Glib::ustring conn_name = row[connection_columns.name];
 
-                Gtk::VBox* terminal_box = Gtk::manage(new Gtk::VBox());
-                GtkWidget* vte_widget = vte_terminal_new();
-                Gtk::Widget* terminal_widget = Glib::wrap(vte_widget);
-                terminal_box->pack_start(*terminal_widget);
-                terminal_widget->show();
-                Gtk::Label* tab_label = Gtk::manage(new Gtk::Label(connection_name));
-                tab_label->show();
-                terminal_box->show();
-                int page_num = notebook.append_page(*terminal_box, *tab_label);
-                if (page_num == -1) {
-                    std::cerr << "Error: Failed to append new terminal tab." << std::endl;
-                    return;
-                }
-                TerminalData* data = new TerminalData{&notebook, page_num};
-                notebook.set_current_page(data->page_num);
-                notebook.show_all();
-                static auto focus_terminal = [](gpointer vte_data) -> gboolean {
-                    GtkWidget* widget = GTK_WIDGET(vte_data);
-                    if (widget && gtk_widget_get_realized(widget) && gtk_widget_get_visible(widget) && gtk_widget_is_sensitive(widget)) {
-                        gtk_widget_grab_focus(widget);
-                    }
-                    return FALSE;
-                };
-                g_idle_add(focus_terminal, vte_widget);
-                vte_terminal_set_input_enabled(VTE_TERMINAL(vte_widget), TRUE);
-
-                std::vector<char*> argv_vec;
-                std::vector<std::string> command_args_str;
-
-                if (connection_type_str == "SSH") {
-                    // Get the connection ID
-                    Glib::ustring conn_id = static_cast<Glib::ustring>((*iter)[connection_columns.id]);
-
-                    // Load the full saved connection details
-                    std::vector<ConnectionInfo> saved_connections = ConnectionManager::load_connections();
-                    auto it = std::find_if(saved_connections.begin(), saved_connections.end(),
-                        [&conn_id](const ConnectionInfo& ci) { return ci.id == conn_id; });
-
-                    if (it != saved_connections.end()) {
-                        // Use the saved connection info which includes password/auth details
-                        std::vector<std::string> ssh_command_parts = Ssh::generate_ssh_command_args(*it);
-
-                        // Build command args vector
-                        command_args_str.clear();
-                        command_args_str.push_back("/bin/bash");
-                        command_args_str.push_back("-c");
-
-                        // Build the SSH command string
-                        std::string ssh_cmd;
-                        for (const auto& part : ssh_command_parts) {
-                            if (!ssh_cmd.empty()) {
-                                ssh_cmd += " ";
-                            }
-                            // Quote the part if it contains spaces or special characters
-                            if (part.find_first_of(" \"'$\\") != std::string::npos) {
-                                ssh_cmd += "'" + part + "'";
-                            } else {
-                                ssh_cmd += part;
+                // Check if this connection is already open
+                auto it = open_connections.find(conn_id.raw());
+                if (it != open_connections.end()) {
+                    // Connection is already open, switch to its tab
+                    int tab_index = it->second;
+                    if (tab_index >= 0 && tab_index < notebook.get_n_pages()) {
+                        notebook.set_current_page(tab_index);
+                        // Get the terminal widget and focus it
+                        if (Gtk::Widget* page = notebook.get_nth_page(tab_index)) {
+                            if (GtkWidget* terminal = GTK_WIDGET(VTE_TERMINAL(page->gobj()))) {
+                                gtk_widget_grab_focus(terminal);
                             }
                         }
-
-                        // Add read prompt
-                        ssh_cmd += "; read -p '[ngTerm] SSH session ended. Press any key to close this tab...' -n 1 -s";
-                        command_args_str.push_back(ssh_cmd);
-                    } else {
-                        std::cerr << "Error: Could not find connection details for ID: " << conn_id << std::endl;
                         return;
+                    } else {
+                        // Tab no longer exists, remove from tracking
+                        open_connections.erase(it);
                     }
-                } else { // Non-SSH connection type
-                    command_args_str.clear();
-                    command_args_str.push_back("/bin/bash");
                 }
 
-                for (const std::string& s : command_args_str) {
-                    argv_vec.push_back(const_cast<char*>(s.c_str()));
+                // Create new terminal for the connection
+                GtkWidget* terminal = vte_terminal_new();
+                vte_terminal_set_scrollback_lines(VTE_TERMINAL(terminal), 10000);
+
+                // Load the full saved connection details
+                std::vector<ConnectionInfo> saved_connections = ConnectionManager::load_connections();
+                auto conn_it = std::find_if(saved_connections.begin(), saved_connections.end(),
+                    [&conn_id](const ConnectionInfo& ci) { return ci.id == conn_id; });
+
+                if (conn_it == saved_connections.end()) {
+                    std::cerr << "Error: Could not find connection details for ID: " << conn_id << std::endl;
+                    return;
                 }
-                argv_vec.push_back(nullptr);
 
-                const char** argv = const_cast<const char**>(argv_vec.data());
+                // Create tab label with connection name
+                Gtk::Label* label = Gtk::manage(new Gtk::Label(conn_name));
 
-                GError* error = nullptr;
-                GPid child_pid;
-                vte_terminal_spawn_sync(VTE_TERMINAL(vte_widget), VTE_PTY_DEFAULT, nullptr, (char**)argv , nullptr, G_SPAWN_DEFAULT, nullptr, nullptr, &child_pid, nullptr, &error);
+                // Create terminal data for cleanup
+                TerminalData* term_data = new TerminalData();
+                term_data->notebook = &notebook;
 
-                if (error) {
-                    std::cerr << "Error spawning terminal: " << error->message << std::endl;
-                    g_error_free(error);
-                    // If spawn fails, remove the tab that was optimistically added
-                    if (notebook.get_n_pages() > page_num && notebook.get_nth_page(page_num) == terminal_box) {
-                         notebook.remove_page(page_num);
+                // Add terminal to notebook in new tab
+                Gtk::Widget* term_widget = Gtk::manage(Glib::wrap(terminal));
+                int page_num = notebook.append_page(*term_widget, *label);
+                term_data->page_num = page_num;
+
+                // Store the connection in our tracking map
+                open_connections[conn_id.raw()] = page_num;
+
+                // Connect to child-exited signal to handle cleanup
+                g_signal_connect(terminal, "child-exited", G_CALLBACK(on_terminal_child_exited), term_data);
+
+                // Show the terminal and set focus
+                notebook.show_all_children();
+                notebook.set_current_page(page_num);
+                gtk_widget_grab_focus(terminal); // Make sure terminal gets focus
+
+                // Start the SSH process
+                if (conn_it->connection_type == "SSH") {
+                    std::vector<std::string> command_args = Ssh::generate_ssh_command_args(*conn_it);
+                    if (!command_args.empty()) {
+                        std::vector<char*> argv;
+                        for (const auto& arg : command_args) {
+                            argv.push_back(const_cast<char*>(arg.c_str()));
+                        }
+                        argv.push_back(nullptr);
+
+                        // Set up the terminal
+                        char** env = g_get_environ();
+                        vte_terminal_spawn_async(
+                            VTE_TERMINAL(terminal),
+                            VTE_PTY_DEFAULT,
+                            nullptr,     // working directory
+                            argv.data(), // command
+                            env,         // environment
+                            G_SPAWN_SEARCH_PATH,
+                            nullptr, nullptr, nullptr, // child setup
+                            -1,         // timeout
+                            nullptr,    // cancellable
+                            nullptr,    // callback
+                            nullptr     // user_data
+                        );
+                        g_strfreev(env);
                     }
-                    delete data; // Clean up TerminalData
-                } else {
-                    // vte_terminal_watch_child(VTE_TERMINAL(vte_widget), child_pid); // VTE's own watch
-                    // Connect to VTE's child-exited signal using g_signal_connect
-                    g_signal_connect(vte_widget, "child-exited", G_CALLBACK(on_terminal_child_exited), data);
                 }
             }
         }
+    });
+
+    // Add cleanup when tab is closed
+    notebook.signal_page_removed().connect([](Gtk::Widget* page, guint page_num) {
+        // Cleanup will be handled by child-exited signal
     });
 
     // Add resize event handler to save window dimensions
