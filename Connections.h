@@ -59,6 +59,9 @@ public:
     // Load all saved folders
     static std::vector<FolderInfo> load_folders();
 
+    // Get a connection by its ID
+    static ConnectionInfo get_connection_by_id(const Glib::ustring& connection_id);
+
     // Delete a connection by ID
     static bool delete_connection(const Glib::ustring& connection_id);
 

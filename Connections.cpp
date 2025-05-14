@@ -388,3 +388,18 @@ bool ConnectionManager::delete_folder(const Glib::ustring& folder_id) {
         return false;
     }
 }
+
+// Get a connection by its ID
+ConnectionInfo ConnectionManager::get_connection_by_id(const Glib::ustring& connection_id) {
+    std::vector<ConnectionInfo> all_connections = load_connections();
+    auto it = std::find_if(all_connections.begin(), all_connections.end(),
+        [&connection_id](const ConnectionInfo& conn) { return conn.id == connection_id; });
+    if (it != all_connections.end()) {
+        return *it;
+    }
+    return ConnectionInfo(); // Return an empty/default ConnectionInfo if not found
+}
+
+std::filesystem::path ConnectionManager::get_connections_directory() {
+    return get_connections_dir();
+}
