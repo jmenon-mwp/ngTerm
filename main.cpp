@@ -56,8 +56,11 @@ enum class DialogPurpose {
     DUPLICATE
 };
 
-// Global pointer for the filter entry
-Gtk::Entry* filter_entry = nullptr;
+// Define the TerminalData struct to pass to the callback
+struct TerminalData {
+    Gtk::Notebook* notebook;
+    int page_num;
+};
 
 // Function to handle selection changes in the TreeView
 void on_connection_selection_changed() {
@@ -777,149 +780,8 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
     }
     left_frame.add(*vbox);
 
-    // Create Toolbar
-    Gtk::Toolbar* toolbar = Gtk::manage(new Gtk::Toolbar());
-    toolbar->set_toolbar_style(Gtk::TOOLBAR_ICONS);
-    // toolbar->set_show_arrow(false); // Deprecated and not needed with modern GTK
-    // toolbar->set_spacing(0); // This property doesn't exist for GtkToolbar / causes warning
-    toolbar->set_icon_size(Gtk::ICON_SIZE_MENU); // Set expected icon size for the toolbar (16x16)
 
-    // Helper lambda to create an icon (scaling is now handled by the toolbar)
-    auto create_icon = [](const std::string& icon_path) -> Gtk::Image* {
-        try {
-            Glib::RefPtr<Gdk::Pixbuf> pixbuf = Gdk::Pixbuf::create_from_file(icon_path);
-            if (pixbuf) {
-                return Gtk::manage(new Gtk::Image(pixbuf));
-            }
-        } catch (const Gdk::PixbufError& ex) { // Catch more specific exception first
-            std::cerr << "PixbufError for icon '" << icon_path << "': " << ex.what() << std::endl;
-        } catch (const Glib::Error& ex) { // Then catch the more general one
-            std::cerr << "Error loading icon '" << icon_path << "': " << ex.what() << std::endl;
-        }
-        // Fallback: return a new empty image if loading failed
-        return Gtk::manage(new Gtk::Image());
-    };
-
-    // Add Folder Button
-    Gtk::ToolButton* add_folder_button = Gtk::manage(new Gtk::ToolButton());
-    Gtk::Image* add_folder_icon = create_icon("images/addfolder.png");
-    add_folder_button->set_icon_widget(*add_folder_icon);
-    add_folder_button->set_tooltip_text("Add Folder");
-    add_folder_button->set_margin_start(1);
-    add_folder_button->set_margin_end(1);
-    add_folder_button->set_margin_top(0);
-    add_folder_button->set_margin_bottom(0);
-    add_folder_button->signal_clicked().connect([&parent_window, &connections_treeview_ref, &liststore_ref, &columns_ref]() {
-        FolderOps::add_folder(parent_window, connections_treeview_ref, liststore_ref, columns_ref);
-    });
-    toolbar->append(*add_folder_button);
-
-    // Edit Folder Button
-    Gtk::ToolButton* edit_folder_button = Gtk::manage(new Gtk::ToolButton());
-    Gtk::Image* edit_folder_icon = create_icon("images/editfolder.png");
-    edit_folder_button->set_icon_widget(*edit_folder_icon);
-    edit_folder_button->set_tooltip_text("Edit Folder");
-    edit_folder_button->set_margin_start(1);
-    edit_folder_button->set_margin_end(1);
-    edit_folder_button->set_margin_top(0);
-    edit_folder_button->set_margin_bottom(0);
-    edit_folder_button->signal_clicked().connect([&parent_window, &connections_treeview_ref, &liststore_ref, &columns_ref]() {
-        FolderOps::edit_folder(parent_window, connections_treeview_ref, liststore_ref, columns_ref);
-    });
-    edit_folder_menu_item_toolbar = edit_folder_button; // Assign to global pointer
-    toolbar->append(*edit_folder_button);
-
-    // Delete Folder Button (3rd button)
-    Gtk::ToolButton* delete_folder_button = Gtk::manage(new Gtk::ToolButton());
-    Gtk::Image* delete_folder_icon = create_icon("images/rmfolder.png");
-    delete_folder_button->set_icon_widget(*delete_folder_icon);
-    delete_folder_button->set_tooltip_text("Delete Folder");
-    delete_folder_button->set_margin_start(1);
-    delete_folder_button->set_margin_end(1);
-    delete_folder_button->set_margin_top(0);
-    delete_folder_button->set_margin_bottom(0);
-    delete_folder_button->signal_clicked().connect([&parent_window, &connections_treeview_ref, &liststore_ref, &columns_ref]() {
-        FolderOps::delete_folder(parent_window, connections_treeview_ref, liststore_ref, columns_ref);
-    });
-    delete_folder_menu_item_toolbar = delete_folder_button; // Assign to global pointer
-    toolbar->append(*delete_folder_button);
-
-    // Add Connection Button
-    Gtk::ToolButton* add_conn_button = Gtk::manage(new Gtk::ToolButton());
-    Gtk::Image* add_conn_icon = create_icon("images/addconn.png");
-    add_conn_button->set_icon_widget(*add_conn_icon);
-    add_conn_button->set_tooltip_text("Add Connection");
-    add_conn_button->set_margin_start(1);
-    add_conn_button->set_margin_end(1);
-    add_conn_button->set_margin_top(0);
-    add_conn_button->set_margin_bottom(0);
-    add_conn_button->signal_clicked().connect(sigc::bind(sigc::ptr_fun(&add_connection_dialog), std::ref(notebook)));
-    toolbar->append(*add_conn_button);
-
-    // Edit Connection Button
-    Gtk::ToolButton* edit_conn_button = Gtk::manage(new Gtk::ToolButton());
-    Gtk::Image* edit_conn_icon = create_icon("images/editconn.png");
-    edit_conn_button->set_icon_widget(*edit_conn_icon);
-    edit_conn_button->set_tooltip_text("Edit Connection");
-    edit_conn_button->set_margin_start(1);
-    edit_conn_button->set_margin_end(1);
-    edit_conn_button->set_margin_top(0);
-    edit_conn_button->set_margin_bottom(0);
-    edit_conn_button->signal_clicked().connect([&notebook]() {
-        edit_connection_dialog(notebook);
-    });
-    edit_connection_menu_item_toolbar = edit_conn_button; // Assign to global pointer
-    toolbar->append(*edit_conn_button);
-
-    // Delete Connection Button (6th button)
-    Gtk::ToolButton* delete_conn_button = Gtk::manage(new Gtk::ToolButton());
-    Gtk::Image* delete_conn_icon = create_icon("images/rmconn.png");
-    delete_conn_button->set_icon_widget(*delete_conn_icon);
-    delete_conn_button->set_tooltip_text("Delete Connection");
-    delete_conn_button->set_margin_start(1);
-    delete_conn_button->set_margin_end(1);
-    delete_conn_button->set_margin_top(0);
-    delete_conn_button->set_margin_bottom(0);
-    delete_conn_button->signal_clicked().connect([&connections_treeview_ref, &liststore_ref, &columns_ref, &parent_window]() { // Added parent_window capture
-        if (!connections_treeview) return; // Ensure global connections_treeview is used or capture local ref
-        Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview_ref.get_selection();
-        if (selection) {
-            Gtk::TreeModel::iterator iter = selection->get_selected();
-            if (iter) {
-                bool is_connection = (*iter)[columns_ref.is_connection];
-                if (is_connection) {
-                    Glib::ustring conn_id = static_cast<Glib::ustring>((*iter)[columns_ref.id]);
-                    Glib::ustring conn_name = static_cast<Glib::ustring>((*iter)[columns_ref.name]);
-
-                    Gtk::MessageDialog confirmation_dialog(parent_window, "Delete Connection", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_YES_NO, true);
-                    confirmation_dialog.set_secondary_text("Are you sure you want to delete the connection '" + conn_name + "'?");
-                    if (confirmation_dialog.run() == Gtk::RESPONSE_YES) {
-                        if (ConnectionManager::delete_connection(conn_id)) {
-                            if (connections_liststore && connections_treeview) {
-                                populate_connections_treeview(liststore_ref, columns_ref, connections_treeview_ref);
-                            }
-                        } else {
-                            Gtk::MessageDialog error_dialog(parent_window, "Error", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
-                            error_dialog.set_secondary_text("Could not delete the connection '" + conn_name + "'.");
-                            error_dialog.run();
-                        }
-                    }
-                } else {
-                    Gtk::MessageDialog info_dialog(parent_window, "Not a Connection", false, Gtk::MESSAGE_INFO, Gtk::BUTTONS_OK, true);
-                    info_dialog.set_secondary_text("Please select a connection to delete.");
-                    info_dialog.run();
-                }
-            } else {
-                Gtk::MessageDialog info_dialog(parent_window, "No Selection", false, Gtk::MESSAGE_INFO, Gtk::BUTTONS_OK, true);
-                info_dialog.set_secondary_text("Please select an item to delete.");
-                info_dialog.run();
-            }
-        }
-    });
-    delete_connection_menu_item_toolbar = delete_conn_button; // Assign to global pointer
-    toolbar->append(*delete_conn_button);
-
-    vbox->pack_start(*toolbar, Gtk::PACK_SHRINK); // Add toolbar to vbox
+    // PENDING:    vbox->pack_start(*toolbar, Gtk::PACK_SHRINK); // Add toolbar to vbox
 
     // Configure ScrolledWindow for TreeView
     left_scrolled_window.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
@@ -1077,13 +939,6 @@ void populate_connections_treeview(Glib::RefPtr<Gtk::TreeStore>& liststore, Conn
 
 }
 
-// Define the TerminalData struct globally so its members are known to the callback
-struct TerminalData {
-    Gtk::Notebook* notebook;
-    int page_num;
-    // We might need to add VteTerminal* vte_widget; if we need to interact with it directly in the callback
-};
-
 // C-style callback for key press event
 gboolean on_terminal_key_press(GtkWidget* widget, GdkEventKey* event, gpointer user_data) {
     TerminalData* td = static_cast<TerminalData*>(user_data);
@@ -1190,17 +1045,172 @@ int main(int argc, char* argv[]) {
     // Create MenuBar
     Gtk::MenuBar menubar;
 
-    // Build menu first
+    // Create notebook
     Gtk::Notebook notebook;
-    // connections_treeview, connection_columns, connections_liststore are now global
+
+    // Create TreeView references
+    Glib::RefPtr<Gtk::TreeStore> connections_liststore;
+    ConnectionColumns columns_ref;
+
     // Initialize global liststore using global connection_columns
     connections_liststore = Gtk::TreeStore::create(connection_columns);
     connections_treeview->set_model(connections_liststore);
 
+    // Build menu first
     build_menu(window, menubar, notebook, *connections_treeview, connections_liststore, connection_columns);
 
     // Pack MenuBar at the TOP of the main_vbox
     main_vbox.pack_start(menubar, false, false, 0);
+
+    // Create Toolbar
+    Gtk::Toolbar* toolbar = Gtk::manage(new Gtk::Toolbar());
+    toolbar->set_toolbar_style(Gtk::TOOLBAR_ICONS);
+    toolbar->set_icon_size(Gtk::ICON_SIZE_MENU);
+
+    // Helper lambda to create an icon (scaling is now handled by the toolbar)
+    auto create_icon = [](const std::string& icon_path) -> Gtk::Image* {
+        try {
+            Glib::RefPtr<Gdk::Pixbuf> pixbuf = Gdk::Pixbuf::create_from_file(icon_path);
+            if (pixbuf) {
+                return Gtk::manage(new Gtk::Image(pixbuf));
+            }
+        } catch (const Gdk::PixbufError& ex) {
+            std::cerr << "PixbufError for icon '" << icon_path << "': " << ex.what() << std::endl;
+        } catch (const Glib::Error& ex) {
+            std::cerr << "Error loading icon '" << icon_path << "': " << ex.what() << std::endl;
+        }
+        return Gtk::manage(new Gtk::Image());
+    };
+
+    // Add Folder Button
+    Gtk::ToolButton* add_folder_button = Gtk::manage(new Gtk::ToolButton());
+    Gtk::Image* add_folder_icon = create_icon("images/addfolder.png");
+    add_folder_button->set_icon_widget(*add_folder_icon);
+    add_folder_button->set_tooltip_text("Add Folder");
+    add_folder_button->set_margin_start(1);
+    add_folder_button->set_margin_end(1);
+    add_folder_button->set_margin_top(0);
+    add_folder_button->set_margin_bottom(0);
+    add_folder_button->signal_clicked().connect(
+        [window_ref = std::ref(window), &columns_ref, &connections_liststore]() {
+            FolderOps::add_folder(window_ref.get(), *connections_treeview, connections_liststore, columns_ref);
+        }
+    );
+    toolbar->append(*add_folder_button);
+
+    // Edit Folder Button
+    Gtk::ToolButton* edit_folder_button = Gtk::manage(new Gtk::ToolButton());
+    Gtk::Image* edit_folder_icon = create_icon("images/editfolder.png");
+    edit_folder_button->set_icon_widget(*edit_folder_icon);
+    edit_folder_button->set_tooltip_text("Edit Folder");
+    edit_folder_button->set_margin_start(1);
+    edit_folder_button->set_margin_end(1);
+    edit_folder_button->set_margin_top(0);
+    edit_folder_button->set_margin_bottom(0);
+    edit_folder_button->signal_clicked().connect(
+        [window_ref = std::ref(window), &columns_ref, &connections_liststore]() {
+            FolderOps::edit_folder(window_ref.get(), *connections_treeview, connections_liststore, columns_ref);
+        }
+    );
+    edit_folder_menu_item_toolbar = edit_folder_button;
+    toolbar->append(*edit_folder_button);
+
+    // Delete Folder Button
+    Gtk::ToolButton* delete_folder_button = Gtk::manage(new Gtk::ToolButton());
+    Gtk::Image* delete_folder_icon = create_icon("images/rmfolder.png");
+    delete_folder_button->set_icon_widget(*delete_folder_icon);
+    delete_folder_button->set_tooltip_text("Delete Folder");
+    delete_folder_button->set_margin_start(1);
+    delete_folder_button->set_margin_end(1);
+    delete_folder_button->set_margin_top(0);
+    delete_folder_button->set_margin_bottom(0);
+    delete_folder_button->signal_clicked().connect(
+        [window_ref = std::ref(window), &columns_ref, &connections_liststore]() {
+            FolderOps::delete_folder(window_ref.get(), *connections_treeview, connections_liststore, columns_ref);
+        }
+    );
+    delete_folder_menu_item_toolbar = delete_folder_button;
+    toolbar->append(*delete_folder_button);
+
+    // Add Connection Button
+    Gtk::ToolButton* add_conn_button = Gtk::manage(new Gtk::ToolButton());
+    Gtk::Image* add_conn_icon = create_icon("images/addconn.png");
+    add_conn_button->set_icon_widget(*add_conn_icon);
+    add_conn_button->set_tooltip_text("Add Connection");
+    add_conn_button->set_margin_start(1);
+    add_conn_button->set_margin_end(1);
+    add_conn_button->set_margin_top(0);
+    add_conn_button->set_margin_bottom(0);
+    add_conn_button->signal_clicked().connect(sigc::bind(sigc::ptr_fun(&add_connection_dialog), std::ref(notebook)));
+    toolbar->append(*add_conn_button);
+
+    // Edit Connection Button
+    Gtk::ToolButton* edit_conn_button = Gtk::manage(new Gtk::ToolButton());
+    Gtk::Image* edit_conn_icon = create_icon("images/editconn.png");
+    edit_conn_button->set_icon_widget(*edit_conn_icon);
+    edit_conn_button->set_tooltip_text("Edit Connection");
+    edit_conn_button->set_margin_start(1);
+    edit_conn_button->set_margin_end(1);
+    edit_conn_button->set_margin_top(0);
+    edit_conn_button->set_margin_bottom(0);
+    edit_conn_button->signal_clicked().connect([notebook_ref = std::ref(notebook)]() {
+        edit_connection_dialog(notebook_ref.get());
+    });
+    edit_connection_menu_item_toolbar = edit_conn_button;
+    toolbar->append(*edit_conn_button);
+
+    // Delete Connection Button
+    Gtk::ToolButton* delete_conn_button = Gtk::manage(new Gtk::ToolButton());
+    Gtk::Image* delete_conn_icon = create_icon("images/rmconn.png");
+    delete_conn_button->set_icon_widget(*delete_conn_icon);
+    delete_conn_button->set_tooltip_text("Delete Connection");
+    delete_conn_button->set_margin_start(1);
+    delete_conn_button->set_margin_end(1);
+    delete_conn_button->set_margin_top(0);
+    delete_conn_button->set_margin_bottom(0);
+    delete_conn_button->signal_clicked().connect(
+        [window_ref = std::ref(window), &columns_ref, &connections_liststore]() {
+            if (!connections_treeview) return;
+            Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview->get_selection();
+            if (selection) {
+                Gtk::TreeModel::iterator iter = selection->get_selected();
+                if (iter) {
+                    bool is_connection = (*iter)[columns_ref.is_connection];
+                    if (is_connection) {
+                        Glib::ustring conn_id = static_cast<Glib::ustring>((*iter)[columns_ref.id]);
+                        Glib::ustring conn_name = static_cast<Glib::ustring>((*iter)[columns_ref.name]);
+
+                        Gtk::MessageDialog confirmation_dialog(window_ref.get(), "Delete Connection", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_YES_NO, true);
+                        confirmation_dialog.set_secondary_text("Are you sure you want to delete the connection '" + conn_name + "'?");
+                        if (confirmation_dialog.run() == Gtk::RESPONSE_YES) {
+                            if (ConnectionManager::delete_connection(conn_id)) {
+                                if (connections_liststore && connections_treeview) {
+                                    populate_connections_treeview(connections_liststore, columns_ref, *connections_treeview);
+                                }
+                            } else {
+                                Gtk::MessageDialog error_dialog(window_ref.get(), "Error", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
+                                error_dialog.set_secondary_text("Could not delete the connection '" + conn_name + "'.");
+                                error_dialog.run();
+                            }
+                        }
+                    } else {
+                        Gtk::MessageDialog info_dialog(window_ref.get(), "Not a Connection", false, Gtk::MESSAGE_INFO, Gtk::BUTTONS_OK, true);
+                        info_dialog.set_secondary_text("Please select a connection to delete.");
+                        info_dialog.run();
+                    }
+                } else {
+                    Gtk::MessageDialog info_dialog(window_ref.get(), "No Selection", false, Gtk::MESSAGE_INFO, Gtk::BUTTONS_OK, true);
+                    info_dialog.set_secondary_text("Please select an item to delete.");
+                    info_dialog.run();
+                }
+            }
+        }
+    );
+    delete_connection_menu_item_toolbar = delete_conn_button;
+    toolbar->append(*delete_conn_button);
+
+    // Pack Toolbar at the TOP of the main_vbox
+    main_vbox.pack_start(*toolbar, false, false, 0);
 
     // Create a horizontal paned widget
     Gtk::HPaned main_hpaned;
@@ -1260,8 +1270,6 @@ int main(int argc, char* argv[]) {
     main_hpaned.set_position(250);
 
     // Connections TreeView setup
-    // connections_treeview->set_model(connections_liststore); // Already done after liststore creation
-    // connections_treeview->append_column("Name", connection_columns.name); // build_leftFrame handles adding the column if empty
     connections_treeview->get_selection()->signal_changed().connect(sigc::ptr_fun(&on_connection_selection_changed)); // Use ->
 
     // Populate the TreeView after setting up selection handler
