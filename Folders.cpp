@@ -26,8 +26,7 @@ void add_folder(Gtk::Window& parent_window,
     dialog.get_content_area()->pack_start(*grid, Gtk::PACK_EXPAND_WIDGET);
 
     // Folder Name
-    Gtk::Label name_label("Folder Name:");
-    name_label.set_halign(Gtk::ALIGN_START);
+    Gtk::Label name_label("Folder Name:", Gtk::ALIGN_START);
     Gtk::Entry name_entry;
     name_entry.set_hexpand(true);
 
@@ -47,8 +46,7 @@ void add_folder(Gtk::Window& parent_window,
     // --- End of determining initially selected parent ---
 
     // Parent Folder
-    Gtk::Label parent_label("Parent Folder:");
-    parent_label.set_halign(Gtk::ALIGN_START);
+    Gtk::Label parent_label("Parent Folder:", Gtk::ALIGN_START);
     Gtk::ComboBoxText parent_combo;
     parent_combo.set_hexpand(true);
     parent_combo.append("root_placeholder_id", "(Root Level)"); // ID, Text. Special ID for root.
@@ -147,15 +145,13 @@ void edit_folder(Gtk::Window& parent_window,
     dialog.get_content_area()->pack_start(*grid, Gtk::PACK_EXPAND_WIDGET);
 
     // Folder Name
-    Gtk::Label name_label("Folder Name:");
-    name_label.set_halign(Gtk::ALIGN_START);
+    Gtk::Label name_label("Folder Name:", Gtk::ALIGN_START);
     Gtk::Entry name_entry;
     name_entry.set_hexpand(true);
     name_entry.set_text(current_folder.name); // Pre-fill current name
 
     // Parent Folder selection
-    Gtk::Label parent_folder_label("Parent Folder:");
-    parent_folder_label.set_halign(Gtk::ALIGN_START);
+    Gtk::Label parent_folder_label("Parent Folder:", Gtk::ALIGN_START);
     Gtk::ComboBoxText parent_folder_combo;
     parent_folder_combo.set_hexpand(true);
     std::vector<FolderInfo> all_folders = ConnectionManager::load_folders();
