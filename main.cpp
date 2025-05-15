@@ -1486,10 +1486,27 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
     toolbar->set_toolbar_style(Gtk::TOOLBAR_ICONS);
     // toolbar->set_show_arrow(false); // Deprecated and not needed with modern GTK
     // toolbar->set_spacing(0); // This property doesn't exist for GtkToolbar / causes warning
+    toolbar->set_icon_size(Gtk::ICON_SIZE_MENU); // Set expected icon size for the toolbar (16x16)
+
+    // Helper lambda to create an icon (scaling is now handled by the toolbar)
+    auto create_icon = [](const std::string& icon_path) -> Gtk::Image* {
+        try {
+            Glib::RefPtr<Gdk::Pixbuf> pixbuf = Gdk::Pixbuf::create_from_file(icon_path);
+            if (pixbuf) {
+                return Gtk::manage(new Gtk::Image(pixbuf));
+            }
+        } catch (const Gdk::PixbufError& ex) { // Catch more specific exception first
+            std::cerr << "PixbufError for icon '" << icon_path << "': " << ex.what() << std::endl;
+        } catch (const Glib::Error& ex) { // Then catch the more general one
+            std::cerr << "Error loading icon '" << icon_path << "': " << ex.what() << std::endl;
+        }
+        // Fallback: return a new empty image if loading failed
+        return Gtk::manage(new Gtk::Image());
+    };
 
     // Add Folder Button
     Gtk::ToolButton* add_folder_button = Gtk::manage(new Gtk::ToolButton());
-    Gtk::Image* add_folder_icon = Gtk::manage(new Gtk::Image("images/addfolder.png"));
+    Gtk::Image* add_folder_icon = create_icon("images/addfolder.png");
     add_folder_button->set_icon_widget(*add_folder_icon);
     add_folder_button->set_tooltip_text("Add Folder");
     add_folder_button->set_margin_start(1);
@@ -1503,7 +1520,7 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
 
     // Edit Folder Button
     Gtk::ToolButton* edit_folder_button = Gtk::manage(new Gtk::ToolButton());
-    Gtk::Image* edit_folder_icon = Gtk::manage(new Gtk::Image("images/editfolder.png"));
+    Gtk::Image* edit_folder_icon = create_icon("images/editfolder.png");
     edit_folder_button->set_icon_widget(*edit_folder_icon);
     edit_folder_button->set_tooltip_text("Edit Folder");
     edit_folder_button->set_margin_start(1);
@@ -1518,7 +1535,7 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
 
     // Delete Folder Button (3rd button)
     Gtk::ToolButton* delete_folder_button = Gtk::manage(new Gtk::ToolButton());
-    Gtk::Image* delete_folder_icon = Gtk::manage(new Gtk::Image("images/rmfolder.png"));
+    Gtk::Image* delete_folder_icon = create_icon("images/rmfolder.png");
     delete_folder_button->set_icon_widget(*delete_folder_icon);
     delete_folder_button->set_tooltip_text("Delete Folder");
     delete_folder_button->set_margin_start(1);
@@ -1533,7 +1550,7 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
 
     // Add Connection Button
     Gtk::ToolButton* add_conn_button = Gtk::manage(new Gtk::ToolButton());
-    Gtk::Image* add_conn_icon = Gtk::manage(new Gtk::Image("images/addconn.png"));
+    Gtk::Image* add_conn_icon = create_icon("images/addconn.png");
     add_conn_button->set_icon_widget(*add_conn_icon);
     add_conn_button->set_tooltip_text("Add Connection");
     add_conn_button->set_margin_start(1);
@@ -1545,7 +1562,7 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
 
     // Edit Connection Button
     Gtk::ToolButton* edit_conn_button = Gtk::manage(new Gtk::ToolButton());
-    Gtk::Image* edit_conn_icon = Gtk::manage(new Gtk::Image("images/editconn.png"));
+    Gtk::Image* edit_conn_icon = create_icon("images/editconn.png");
     edit_conn_button->set_icon_widget(*edit_conn_icon);
     edit_conn_button->set_tooltip_text("Edit Connection");
     edit_conn_button->set_margin_start(1);
@@ -1558,7 +1575,7 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
 
     // Delete Connection Button (6th button)
     Gtk::ToolButton* delete_conn_button = Gtk::manage(new Gtk::ToolButton());
-    Gtk::Image* delete_conn_icon = Gtk::manage(new Gtk::Image("images/rmconn.png"));
+    Gtk::Image* delete_conn_icon = create_icon("images/rmconn.png");
     delete_conn_button->set_icon_widget(*delete_conn_icon);
     delete_conn_button->set_tooltip_text("Delete Connection");
     delete_conn_button->set_margin_start(1);
@@ -1732,41 +1749,34 @@ void populate_connections_treeview(Glib::RefPtr<Gtk::TreeStore>& liststore, Conn
     }
 
     // Add connections under their respective folders or at the root
-    for (const auto& connection : connections) {
-        Gtk::TreeModel::Row conn_row;
-        Gtk::TreeModel::iterator parent_iter;
-        bool parent_found = false;
+    for (const auto& conn : connections) {
+        Gtk::TreeModel::iterator conn_iter; // Iterator for the new connection row
+        Gtk::TreeModel::Row row;
 
-        if (!connection.folder_id.empty() && folder_iters.count(connection.folder_id)) {
-            // Folder_id is specified and the corresponding folder iterator exists
-            parent_iter = folder_iters[connection.folder_id];
-            parent_found = true;
-        }
-
-        if (parent_found) {
-            conn_row = *(liststore->append(parent_iter->children()));
+        // Check if the connection has a folder_id and if that parent folder exists in our map
+        if (!conn.folder_id.empty() && folder_iters.count(conn.folder_id)) {
+            Gtk::TreeModel::iterator parent_iter = folder_iters[conn.folder_id];
+            conn_iter = liststore->append(parent_iter->children()); // Add as child
         } else {
-            if (!connection.folder_id.empty()) {
-                // Connection specifies a folder_id, but that folder was not found in folder_iters.
-                // This means it's an orphaned connection, or its parent folder was an orphan and placed at root.
-                // std::cerr << "Warning: Connection '" << connection.name << "' (ID: " << connection.id
-                //           << ") has folder_id '" << connection.folder_id << "' but the folder was not found/placed. Adding connection to root." << std::endl;
-            }
-            // Add to root if folder_id is empty or if the specified folder was not found.
-            conn_row = *(liststore->append());
+            // No valid folder_id or parent folder not found, add to root
+            conn_iter = liststore->append();
         }
+        row = *conn_iter; // Get row proxy from the iterator
 
-        conn_row[cols.name] = connection.name;
-        conn_row[cols.id] = connection.id;
-        conn_row[cols.is_folder] = false;
-        conn_row[cols.is_connection] = true;
-        conn_row[cols.host] = connection.host;
-        conn_row[cols.port] = connection.port; // Already an int
-        conn_row[cols.username] = connection.username;
-        conn_row[cols.connection_type] = connection.connection_type;
-        conn_row[cols.parent_id_col] = connection.folder_id; // For connections, parent_id_col stores their folder_id
+        row[cols.name] = conn.name;
+        row[cols.id] = conn.id;
+        row[cols.parent_id_col] = conn.folder_id; // Store folder_id in parent_id_col
+        row[cols.is_folder] = false;       // Mark as not a folder
+        row[cols.is_connection] = true; // Mark as a connection
+        row[cols.host] = conn.host;
+        row[cols.port] = conn.port;
+        row[cols.username] = conn.username;
+        row[cols.connection_type] = conn.connection_type; // Use connection_type from ConnectionInfo
+        // Other fields like password, ssh_key_path are not displayed in the treeview columns themselves
     }
-    treeview.expand_all(); // Expand all nodes to show the structure
+    // Ensure the treeview is updated and columns are visible
+    treeview.expand_all(); // Optional: expand all folders by default
+
 }
 
 // Define the TerminalData struct globally so its members are known to the callback
@@ -1776,10 +1786,9 @@ struct TerminalData {
     // We might need to add VteTerminal* vte_widget; if we need to interact with it directly in the callback
 };
 
-// Callback function for VTE's "child-exited" signal
-void on_terminal_child_exited(GtkWidget* widget, gint status, gpointer user_data) {
-    TerminalData* term_data = static_cast<TerminalData*>(user_data);
-    if (!term_data) return;
+// C-style callback for key press event
+gboolean on_terminal_key_press(GtkWidget* widget, GdkEventKey* event, gpointer user_data) {
+    TerminalData* td = static_cast<TerminalData*>(user_data);
 
     // Schedule cleanup for the next idle moment
     g_idle_add([](gpointer data) -> gboolean {
@@ -1804,7 +1813,26 @@ void on_terminal_child_exited(GtkWidget* widget, gint status, gpointer user_data
         }
         delete td;
         return G_SOURCE_REMOVE;
-    }, term_data);
+    }, td);
+
+    return TRUE; // Stop event propagation
+}
+
+// Callback function for VTE's "child-exited" signal
+void on_terminal_child_exited(GtkWidget* widget, gint status, gpointer user_data) {
+    TerminalData* term_data = static_cast<TerminalData*>(user_data);
+    if (!term_data) return;
+
+    // Display a message in the terminal
+    VteTerminal* terminal = VTE_TERMINAL(widget);
+    const char* exit_message = "\r\n\033[1;31mProcess completed.\033[0m Press any key to close this terminal...\r\n";
+    vte_terminal_feed(terminal, exit_message, strlen(exit_message));
+
+    // Connect a key press event to close the terminal when any key is pressed
+    g_signal_connect(widget, "key-press-event", G_CALLBACK(on_terminal_key_press), term_data);
+
+    // Ensure focus is on the terminal so it can receive key events
+    gtk_widget_grab_focus(widget);
 }
 
 int main(int argc, char* argv[]) {
@@ -1954,17 +1982,29 @@ int main(int argc, char* argv[]) {
     populate_connections_treeview(connections_liststore, connection_columns, *connections_treeview);
 
     // Add double-click event handler
-    connections_treeview->signal_row_activated().connect([&notebook](const Gtk::TreeModel::Path& path, Gtk::TreeViewColumn* column) {
-        auto model = connections_treeview->get_model();
-        auto iter = model->get_iter(path);
-        if (iter) {
+    Glib::RefPtr<Gtk::TreeModel> treemodel = connections_treeview->get_model();
+
+    connections_treeview->signal_row_activated().connect(
+        [&notebook, treemodel](const Gtk::TreeModel::Path& path, Gtk::TreeViewColumn* column) {
+
+            if (!treemodel) {
+                return;
+            }
+
+            auto iter = treemodel->get_iter(path);
+            if (!iter) {
+                return;
+            }
+
             Gtk::TreeModel::Row row = *iter;
             bool is_folder = row[connection_columns.is_folder];
+
             if (is_folder) {
                 return; // Do nothing if a folder is double-clicked
             }
 
             bool is_connection = row[connection_columns.is_connection];
+
             if (is_connection) {
                 Glib::ustring conn_id = row[connection_columns.id];
                 Glib::ustring conn_name = row[connection_columns.name];
@@ -2005,7 +2045,6 @@ int main(int argc, char* argv[]) {
 
                 // Create tab label with connection name
                 Gtk::Label* label = Gtk::manage(new Gtk::Label(conn_name));
-
                 // Create terminal data for cleanup
                 TerminalData* term_data = new TerminalData();
                 term_data->notebook = &notebook;
@@ -2014,6 +2053,21 @@ int main(int argc, char* argv[]) {
                 Gtk::Widget* term_widget = Gtk::manage(Glib::wrap(terminal));
                 int page_num = notebook.append_page(*term_widget, *label);
                 term_data->page_num = page_num;
+
+                // Show all widgets
+                notebook.show_all();
+                term_widget->show();
+
+                // Force UI update
+                while (Gtk::Main::events_pending()) {
+                    Gtk::Main::iteration();
+                }
+
+                // Make sure the new tab is visible and selected
+                notebook.set_current_page(page_num);
+
+                // Ensure the terminal has focus
+                gtk_widget_grab_focus(terminal);
 
                 // Store the connection in our tracking map
                 open_connections[conn_id.raw()] = page_num;
@@ -2047,11 +2101,13 @@ int main(int argc, char* argv[]) {
                             nullptr     // user_data
                         );
                         g_strfreev(env);
+                    } else {
+                        std::cerr << "Error: Empty command args for SSH connection" << std::endl;
                     }
                 }
             }
         }
-    });
+    );
 
     // Add cleanup when tab is closed
     notebook.signal_page_removed().connect([](Gtk::Widget* page, guint page_num) {
