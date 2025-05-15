@@ -764,52 +764,32 @@ void build_menu(Gtk::Window& parent_window, Gtk::MenuBar& menubar, Gtk::Notebook
 
 // Function to build the left frame
 void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::ScrolledWindow& left_scrolled_window,
-                    Gtk::TreeView& connections_treeview_ref, // Renamed to avoid conflict
-                    Glib::RefPtr<Gtk::TreeStore>& liststore_ref, // Renamed
-                    ConnectionColumns& columns_ref, Gtk::Notebook& notebook) { // Added notebook and changed to ConnectionColumns
+                    Gtk::TreeView& connections_treeview_ref,
+                    Glib::RefPtr<Gtk::TreeStore>& liststore_ref,
+                    ConnectionColumns& columns_ref, Gtk::Notebook& notebook) {
     // Assign global pointers
     connections_treeview = &connections_treeview_ref;
     connections_liststore = liststore_ref;
-    // connection_columns is already global
 
     Gtk::Box* vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 0));
-    // Ensure the frame is empty before adding the new vbox
     Gtk::Widget* current_child = left_frame.get_child();
     if (current_child) {
-        left_frame.remove(); // Correct: Gtk::Bin::remove() takes no arguments
+        left_frame.remove();
     }
     left_frame.add(*vbox);
-
-
-    // PENDING:    vbox->pack_start(*toolbar, Gtk::PACK_SHRINK); // Add toolbar to vbox
-
-    // Configure ScrolledWindow for TreeView
     left_scrolled_window.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
-
-    // Set the TreeView to fill the scrolled window space
     connections_treeview_ref.set_hexpand(true);
     connections_treeview_ref.set_vexpand(true);
-
-    // Create a TreeStore to hold the data for the TreeView
     connections_treeview_ref.set_model(liststore_ref);
-
-    // Add columns to the TreeView
-    // Ensure columns are added only once, TreeView might be reused or repopulated
     if (connections_treeview_ref.get_columns().empty()) {
-        connections_treeview_ref.append_column("Name", columns_ref.name);
+        connections_treeview_ref.append_column("Connections", columns_ref.name);
     }
-
-    // Add the TreeView to the ScrolledWindow
     left_scrolled_window.add(connections_treeview_ref);
-
-    vbox->pack_start(left_scrolled_window, Gtk::PACK_EXPAND_WIDGET); // ScrolledWindow (with TreeView) below toolbar, expands
-    vbox->show(); // Explicitly show the vertical box
-
-    // Show the frame and all its children
+    vbox->pack_start(left_scrolled_window, Gtk::PACK_EXPAND_WIDGET);
+    vbox->show();
     left_frame.show_all();
 }
 
-// Function to build the right frame
 void build_rightFrame(Gtk::Notebook& notebook) {
     // Configure the Notebook widget
     notebook.set_tab_pos(Gtk::POS_TOP);
