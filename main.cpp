@@ -1191,13 +1191,13 @@ int main(int argc, char* argv[]) {
     Gtk::MenuBar menubar;
 
     // Build menu first
-    Gtk::Notebook notebook; // notebook can remain local to main if not needed globally
+    Gtk::Notebook notebook;
     // connections_treeview, connection_columns, connections_liststore are now global
     // Initialize global liststore using global connection_columns
     connections_liststore = Gtk::TreeStore::create(connection_columns);
-    connections_treeview->set_model(connections_liststore); // Use ->
+    connections_treeview->set_model(connections_liststore);
 
-    build_menu(window, menubar, notebook, *connections_treeview, connections_liststore, connection_columns); // Dereference connections_treeview
+    build_menu(window, menubar, notebook, *connections_treeview, connections_liststore, connection_columns);
 
     // Pack MenuBar at the TOP of the main_vbox
     main_vbox.pack_start(menubar, false, false, 0);
