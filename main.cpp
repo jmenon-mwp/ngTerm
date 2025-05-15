@@ -172,8 +172,7 @@ void process_connection_dialog(Gtk::Notebook& notebook, DialogPurpose purpose, c
         }
     }
 
-    Gtk::Label folder_label("Folder:");
-    folder_label.set_halign(Gtk::ALIGN_START);
+    Gtk::Label folder_label("Folder:", Gtk::ALIGN_START);
     Gtk::ComboBoxText folder_combo;
     folder_combo.set_hexpand(true);
     std::vector<FolderInfo> folders = ConnectionManager::load_folders(); // Assumes FolderInfo struct/class
@@ -187,8 +186,7 @@ void process_connection_dialog(Gtk::Notebook& notebook, DialogPurpose purpose, c
         folder_combo.set_active(0); // Select "None (Root Level)" if no folder pre-selected
     }
 
-    Gtk::Label type_label("Connection Type:");
-    type_label.set_halign(Gtk::ALIGN_START);
+    Gtk::Label type_label("Connection Type:", Gtk::ALIGN_START);
     Gtk::ComboBoxText type_combo;
     type_combo.set_hexpand(true);
     type_combo.append("SSH", "SSH");
@@ -197,8 +195,7 @@ void process_connection_dialog(Gtk::Notebook& notebook, DialogPurpose purpose, c
     type_combo.append("RDP", "RDP");
     type_combo.set_active_text(existing_connection ? existing_connection->connection_type : "SSH");
 
-    Gtk::Label name_label("Connection Name:");
-    name_label.set_halign(Gtk::ALIGN_START);
+    Gtk::Label name_label("Connection Name:", Gtk::ALIGN_START);
     Gtk::Entry name_entry;
     name_entry.set_hexpand(true);
     if (existing_connection) {
@@ -209,32 +206,28 @@ void process_connection_dialog(Gtk::Notebook& notebook, DialogPurpose purpose, c
         }
     }
 
-    Gtk::Label host_label("Host:");
-    host_label.set_halign(Gtk::ALIGN_START);
+    Gtk::Label host_label("Host:", Gtk::ALIGN_START);
     Gtk::Entry host_entry;
     host_entry.set_hexpand(true);
     if (existing_connection) {
         host_entry.set_text(existing_connection->host);
     }
 
-    Gtk::Label port_label("Port:");
-    port_label.set_halign(Gtk::ALIGN_START);
+    Gtk::Label port_label("Port:", Gtk::ALIGN_START);
     Gtk::Entry port_entry;
     port_entry.set_hexpand(true);
     if (existing_connection && existing_connection->port > 0) {
         port_entry.set_text(std::to_string(existing_connection->port));
     }
 
-    Gtk::Label ssh_flags_label("SSH Flags:");
-    ssh_flags_label.set_halign(Gtk::ALIGN_START);
+    Gtk::Label ssh_flags_label("SSH Flags:", Gtk::ALIGN_START);
     Gtk::Entry ssh_flags_entry;
     ssh_flags_entry.set_hexpand(true);
     if (existing_connection) {
         ssh_flags_entry.set_text(existing_connection->additional_ssh_options);
     }
 
-    Gtk::Label user_label("Username:");
-    user_label.set_halign(Gtk::ALIGN_START);
+    Gtk::Label user_label("Username:", Gtk::ALIGN_START);
     Gtk::Entry user_entry;
     user_entry.set_hexpand(true);
     if (existing_connection) {
@@ -242,8 +235,7 @@ void process_connection_dialog(Gtk::Notebook& notebook, DialogPurpose purpose, c
     }
 
     // SSH Specific fields will be added and visibility toggled
-    Gtk::Label auth_method_label("Auth Method:");
-    auth_method_label.set_halign(Gtk::ALIGN_START);
+    Gtk::Label auth_method_label("Auth Method:", Gtk::ALIGN_START);
     Gtk::ComboBoxText auth_method_combo;
     auth_method_combo.append("Password", "Password");
     auth_method_combo.append("SSHKey", "SSHKey");
@@ -254,8 +246,7 @@ void process_connection_dialog(Gtk::Notebook& notebook, DialogPurpose purpose, c
         auth_method_combo.set_active_text("Password"); // Default for new
     }
 
-    Gtk::Label password_label("Password:");
-    password_label.set_halign(Gtk::ALIGN_START);
+    Gtk::Label password_label("Password:", Gtk::ALIGN_START);
     password_label.set_markup("<span foreground='red'>Password:</span>");
     Gtk::Entry password_entry;
     password_entry.set_visibility(false); // Mask password
@@ -323,8 +314,7 @@ void process_connection_dialog(Gtk::Notebook& notebook, DialogPurpose purpose, c
         password_entry.set_text("");
     }
 
-    Gtk::Label ssh_key_path_label("SSH Key Path:");
-    ssh_key_path_label.set_halign(Gtk::ALIGN_START);
+    Gtk::Label ssh_key_path_label("SSH Key Path:", Gtk::ALIGN_START);
     Gtk::Entry ssh_key_path_entry;
     ssh_key_path_entry.set_hexpand(true);
     Gtk::Button ssh_key_browse_button("Browse..."); // Added browse button
@@ -332,8 +322,7 @@ void process_connection_dialog(Gtk::Notebook& notebook, DialogPurpose purpose, c
         ssh_key_path_entry.set_text(existing_connection->ssh_key_path);
     }
 
-    Gtk::Label ssh_key_passphrase_label("SSH Key Passphrase:");
-    ssh_key_passphrase_label.set_halign(Gtk::ALIGN_START);
+    Gtk::Label ssh_key_passphrase_label("SSH Key Passphrase:", Gtk::ALIGN_START);
     Gtk::Entry ssh_key_passphrase_entry;
     ssh_key_passphrase_entry.set_visibility(false); // Mask passphrase
     ssh_key_passphrase_entry.set_hexpand(true);
@@ -587,387 +576,46 @@ void duplicate_connection_dialog(Gtk::Notebook& notebook) {
     }
 }
 
-// Function to handle editing a connection
-void edit_connection_dialog() {
-    if (!connections_treeview || !connections_liststore || !edit_connection_menu_item) return;
+// Function to handle editing an existing connection
+void edit_connection_dialog(Gtk::Notebook& notebook) {
+    if (!connections_treeview || !connections_liststore) return;
 
     Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview->get_selection();
-    Gtk::TreeModel::iterator iter = selection->get_selected();
+    if (selection) {
+        Gtk::TreeModel::iterator iter = selection->get_selected();
+        if (iter) {
+            Gtk::TreeModel::Row row = *iter;
+            std::string connection_id = static_cast<Glib::ustring>(row[connection_columns.id]);
+            bool is_folder = row[connection_columns.is_folder];
 
-    if (!iter) {
-        Gtk::MessageDialog warning_dialog("No Connection Selected", false, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_OK, true);
-        warning_dialog.set_secondary_text("Please select a connection to edit.");
-        warning_dialog.run();
-        return;
-    }
+            if (is_folder) {
+                Gtk::Window* top_level_window = dynamic_cast<Gtk::Window*>(notebook.get_toplevel());
+                if (top_level_window) {
+                    Gtk::MessageDialog warning_dialog(*top_level_window, "Cannot Edit Folder", false, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_OK, true);
+                    warning_dialog.set_secondary_text("Please select an individual connection to edit, not a folder.");
+                    warning_dialog.run();
+                }
+                return;
+            }
 
-    Gtk::TreeModel::Row row = *iter;
-    if (!row[connection_columns.is_connection]) {
-        Gtk::MessageDialog warning_dialog("Not a Connection", false, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_OK, true);
-        warning_dialog.set_secondary_text("The selected item is not a connection.");
-        warning_dialog.run();
-        return;
-    }
-
-    Glib::ustring connection_id_to_edit = row[connection_columns.id];
-    ConnectionInfo current_connection;
-    bool found_connection_details = false;
-    std::vector<ConnectionInfo> all_connections = ConnectionManager::load_connections();
-    for (const auto& conn : all_connections) {
-        if (conn.id == connection_id_to_edit) {
-            current_connection = conn;
-            found_connection_details = true;
-            break;
-        }
-    }
-
-    if (!found_connection_details) {
-        Gtk::MessageDialog err_dialog("Error Loading Connection", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
-        err_dialog.set_secondary_text("Could not load full details for the selected connection from storage.");
-        err_dialog.run();
-        return;
-    }
-
-    Gtk::Dialog dialog("Edit Connection", true /* modal */);
-    dialog.set_default_size(450, 0);
-
-    Gtk::Grid* grid = Gtk::manage(new Gtk::Grid());
-    grid->set_hexpand(true);
-    grid->set_border_width(10);
-    grid->set_column_spacing(10);
-    grid->set_row_spacing(10);
-    dialog.get_content_area()->pack_start(*grid, Gtk::PACK_EXPAND_WIDGET);
-
-    // Folder selection
-    Gtk::Label folder_label("Folder:");
-    folder_label.set_halign(Gtk::ALIGN_START);
-    Gtk::ComboBoxText folder_combo;
-    folder_combo.set_hexpand(true);
-    std::vector<FolderInfo> folders = ConnectionManager::load_folders();
-    folder_combo.append("", "None (Root Level)");
-    int folder_active_idx = 0;
-    int current_idx = 1;
-    for (const auto& folder : folders) {
-        folder_combo.append(folder.id, folder.name);
-        if (folder.id == current_connection.folder_id) {
-            folder_active_idx = current_idx;
-        }
-        current_idx++;
-    }
-    folder_combo.set_active(folder_active_idx);
-
-    // Connection Type
-    Gtk::Label type_label("Connection Type:");
-    type_label.set_halign(Gtk::ALIGN_START);
-    Gtk::ComboBoxText type_combo;
-    type_combo.set_hexpand(true);
-    const char* types[] = {"SSH", "Telnet", "VNC", "RDP"};
-    for (const char* type_str : types) {
-        type_combo.append(type_str, type_str);
-    }
-    type_combo.set_active_text(current_connection.connection_type);
-
-    // Connection Name
-    Gtk::Label name_label("Connection Name:");
-    name_label.set_halign(Gtk::ALIGN_START);
-    Gtk::Entry name_entry;
-    name_entry.set_hexpand(true);
-    name_entry.set_text(current_connection.name);
-
-    // Host
-    Gtk::Label host_label("Host:");
-    host_label.set_halign(Gtk::ALIGN_START);
-    Gtk::Entry host_entry;
-    host_entry.set_hexpand(true);
-    host_entry.set_text(current_connection.host);
-
-    // Port
-    Gtk::Label port_label("Port:");
-    port_label.set_halign(Gtk::ALIGN_START);
-    Gtk::Entry port_entry;
-    port_entry.set_hexpand(true);
-    port_entry.set_text(current_connection.port > 0 ? std::to_string(current_connection.port) : "");
-
-    // SSH Flags
-    Gtk::Label ssh_flags_label("SSH Flags:");
-    ssh_flags_label.set_halign(Gtk::ALIGN_START);
-    Gtk::Entry ssh_flags_entry;
-    ssh_flags_entry.set_hexpand(true);
-    ssh_flags_entry.set_text(current_connection.additional_ssh_options);
-
-    // Username
-    Gtk::Label user_label("Username:");
-    user_label.set_halign(Gtk::ALIGN_START);
-    Gtk::Entry user_entry;
-    user_entry.set_hexpand(true);
-    user_entry.set_text(current_connection.username);
-
-    // SSH Specific Fields (declaration)
-    Gtk::Label auth_method_label("Auth Method:");
-    auth_method_label.set_halign(Gtk::ALIGN_START);
-    Gtk::ComboBoxText auth_method_combo;
-    auth_method_combo.set_hexpand(true);
-    auth_method_combo.append("Password", "Password");
-    auth_method_combo.append("SSHKey", "SSHKey");
-    auth_method_combo.set_active_text(current_connection.auth_method);
-
-    Gtk::Label password_label("Password:");
-    password_label.set_halign(Gtk::ALIGN_START);
-    password_label.set_markup("<span foreground='red'>Password:</span>");
-    Gtk::Entry password_entry;
-    password_entry.set_visibility(false); // Mask password
-    password_entry.set_hexpand(true);
-    password_entry.set_text(current_connection.password);
-    // Add security warning tooltip
-    const char* password_security_warning_text =
-        "WARNING: Password will be stored in plain text and may be visible in the process list. "
-        "This is inherently insecure. Consider using SSH keys or do not save the password here. "
-        "You will be prompted for the password when connecting.";
-    password_entry.set_tooltip_text(password_security_warning_text);
-
-    // Custom popup tooltip window for password - declared here, connected in update_visibility
-    Gtk::Window* password_tooltip_window = nullptr;
-
-    // Create a tooltip window
-    password_entry.signal_focus_in_event().connect([password_security_warning_text, &password_tooltip_window, &password_entry](GdkEventFocus*) -> bool {
-        if (!password_tooltip_window) {
-            password_tooltip_window = new Gtk::Window(Gtk::WINDOW_POPUP);
-            password_tooltip_window->set_name("tooltip");
-            password_tooltip_window->set_border_width(2);
-
-            // Create an event box to handle the background color
-            Gtk::EventBox* event_box = Gtk::manage(new Gtk::EventBox());
-            event_box->override_background_color(Gdk::RGBA("orange"));
-
-            Gtk::Label* tooltip_label = Gtk::manage(new Gtk::Label());
-            tooltip_label->set_text(password_security_warning_text);
-            tooltip_label->set_line_wrap(true);
-            tooltip_label->set_max_width_chars(40);
-            tooltip_label->set_justify(Gtk::JUSTIFY_LEFT);
-            tooltip_label->set_margin_start(8);
-            tooltip_label->set_margin_end(8);
-            tooltip_label->set_margin_top(4);
-            tooltip_label->set_margin_bottom(4);
-
-            event_box->add(*tooltip_label);
-            password_tooltip_window->add(*event_box);
-
-            // Set a fixed size for the tooltip
-            password_tooltip_window->set_default_size(350, 60);
-            password_tooltip_window->set_resizable(false);
-        }
-
-        int x, y;
-        password_entry.get_window()->get_origin(x, y);
-        int entry_height = password_entry.get_allocation().get_height();
-        // Position tooltip 2 pixels below the password field
-        password_tooltip_window->move(x, y + entry_height + 2);
-        password_tooltip_window->show_all();
-        return false;
-    });
-
-    // Hide tooltip when password field loses focus
-    password_entry.signal_focus_out_event().connect([&password_tooltip_window](GdkEventFocus*) -> bool {
-        if (password_tooltip_window) {
-            password_tooltip_window->hide();
-        }
-        return false;
-    });
-
-    Gtk::Label ssh_key_label("SSH Key Path:");
-    ssh_key_label.set_halign(Gtk::ALIGN_START);
-    Gtk::Entry ssh_key_path_entry;
-    ssh_key_path_entry.set_hexpand(true);
-    ssh_key_path_entry.set_editable(true);
-    Gtk::Button ssh_key_browse_button("Browse...");
-
-    Gtk::Label ssh_key_passphrase_label("SSH Key Passphrase:");
-    ssh_key_passphrase_label.set_halign(Gtk::ALIGN_START);
-    Gtk::Entry ssh_key_passphrase_entry;
-    ssh_key_passphrase_entry.set_visibility(false); // Mask passphrase
-    ssh_key_passphrase_entry.set_hexpand(true);
-    ssh_key_passphrase_entry.set_text(current_connection.ssh_key_passphrase);
-    const char* passphrase_security_warning_text =
-        "WARNING: Passphrase will be stored in plain text. Consider agent forwarding or leaving blank if your key has no passphrase.";
-    ssh_key_passphrase_entry.set_tooltip_text(passphrase_security_warning_text);
-
-    // Populate SSH specific fields based on loaded current_connection
-    if (current_connection.connection_type == "SSH") {
-        auth_method_combo.set_active_text(current_connection.auth_method);
-        if (current_connection.auth_method == "Password") {
-            password_entry.set_text(current_connection.password); // Pre-fill password
-        } else if (current_connection.auth_method == "SSHKey") {
-            ssh_key_passphrase_entry.set_text(current_connection.ssh_key_passphrase); // Pre-fill passphrase
-        }
-        ssh_key_path_entry.set_text(current_connection.ssh_key_path);
-        ssh_flags_entry.set_text(current_connection.additional_ssh_options);
-    } else {
-        auth_method_combo.set_active_text("Password");
-        password_entry.set_text("");
-        ssh_key_path_entry.set_text("");
-        ssh_key_passphrase_entry.set_text("");
-        ssh_flags_entry.set_text("");
-    }
-
-    // Grid Attachments
-    int currentRow = 0;
-    grid->attach(folder_label, 0, currentRow, 1, 1);
-    grid->attach(folder_combo, 1, currentRow++, 2, 1);
-    grid->attach(type_label, 0, currentRow, 1, 1);
-    grid->attach(type_combo, 1, currentRow++, 2, 1);
-    grid->attach(name_label, 0, currentRow, 1, 1);
-    grid->attach(name_entry, 1, currentRow++, 2, 1);
-    grid->attach(host_label, 0, currentRow, 1, 1);
-    grid->attach(host_entry, 1, currentRow++, 2, 1);
-    grid->attach(port_label, 0, currentRow, 1, 1);
-    grid->attach(port_entry, 1, currentRow++, 2, 1);
-    grid->attach(ssh_flags_label, 0, currentRow, 1, 1);
-    grid->attach(ssh_flags_entry, 1, currentRow++, 2, 1);
-    grid->attach(user_label, 0, currentRow, 1, 1);
-    grid->attach(user_entry, 1, currentRow++, 2, 1);
-    grid->attach(auth_method_label, 0, currentRow, 1, 1);
-    grid->attach(auth_method_combo, 1, currentRow++, 2, 1);
-    grid->attach(password_label, 0, currentRow, 1, 1);
-    grid->attach(password_entry, 1, currentRow++, 2, 1);
-    grid->attach(ssh_key_label, 0, currentRow, 1, 1);
-    grid->attach(ssh_key_path_entry, 1, currentRow,   1, 1); // Entry takes 1 column
-    grid->attach(ssh_key_browse_button, 2, currentRow++, 1, 1); // Button takes 1 column
-    grid->attach(ssh_key_passphrase_label, 0, currentRow, 1, 1);
-    grid->attach(ssh_key_passphrase_entry, 1, currentRow++, 2, 1);
-
-    ssh_key_browse_button.signal_clicked().connect([&dialog, &ssh_key_path_entry]() {
-        Gtk::FileChooserDialog fc_dialog(dialog, "Select SSH Key File", Gtk::FILE_CHOOSER_ACTION_OPEN);
-        fc_dialog.add_button("_Cancel", Gtk::RESPONSE_CANCEL);
-        fc_dialog.add_button("_Open", Gtk::RESPONSE_OK);
-        int fc_result = fc_dialog.run();
-        if (fc_result == Gtk::RESPONSE_OK) {
-            ssh_key_path_entry.set_text(fc_dialog.get_filename());
-        }
-    });
-
-    auto update_visibility = [&]() {
-        bool is_ssh = (type_combo.get_active_text() == "SSH");
-
-        ssh_flags_label.set_visible(is_ssh);
-        ssh_flags_entry.set_visible(is_ssh);
-        auth_method_label.set_visible(is_ssh);
-        auth_method_combo.set_visible(is_ssh);
-
-        if (is_ssh) {
-            bool is_password_auth = (auth_method_combo.get_active_text() == "Password");
-            bool is_ssh_key_auth = (auth_method_combo.get_active_text() == "SSHKey");
-
-            password_label.set_visible(is_password_auth);
-            password_entry.set_visible(is_password_auth);
-
-            ssh_key_label.set_visible(is_ssh_key_auth);
-            ssh_key_path_entry.set_visible(is_ssh_key_auth);
-            ssh_key_browse_button.set_visible(is_ssh_key_auth);
-            ssh_key_passphrase_label.set_visible(is_ssh_key_auth);
-            ssh_key_passphrase_entry.set_visible(is_ssh_key_auth);
-        }
-        dialog.queue_resize();
-    };
-
-    type_combo.signal_changed().connect([&type_combo, &port_entry, &update_visibility]() {
-        std::string selected_type = type_combo.get_active_text();
-        std::string current_port_text = port_entry.get_text();
-        bool port_was_default_for_old_type = false;
-        if (current_port_text == "22") port_was_default_for_old_type = true;
-        else if (current_port_text == "23") port_was_default_for_old_type = true;
-        else if (current_port_text == "5900") port_was_default_for_old_type = true;
-        else if (current_port_text == "3389") port_was_default_for_old_type = true;
-
-        if (current_port_text.empty() || port_was_default_for_old_type) {
-            if (selected_type == "SSH") port_entry.set_text("22");
-            else if (selected_type == "Telnet") port_entry.set_text("23");
-            else if (selected_type == "VNC") port_entry.set_text("5900");
-            else if (selected_type == "RDP") port_entry.set_text("3389");
-            else if (port_was_default_for_old_type) port_entry.set_text(""); // Clear if old was default and new has no default
-        }
-        update_visibility(); // Call after potentially changing connection type
-    });
-
-    auth_method_combo.signal_changed().connect(update_visibility);
-
-    dialog.add_button("_Cancel", Gtk::RESPONSE_CANCEL);
-    dialog.add_button("_Save", Gtk::RESPONSE_OK);
-
-    dialog.get_content_area()->show_all_children();
-    dialog.show_all();
-
-    update_visibility();
-
-    int result = dialog.run();
-
-    if (result == Gtk::RESPONSE_OK) {
-        if (name_entry.get_text().empty()) {
-            Gtk::MessageDialog md(dialog, "Connection name cannot be empty.", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
-            md.run();
-            return;
-        } else if (host_entry.get_text().empty() && (type_combo.get_active_text() == "SSH" || type_combo.get_active_text() == "Telnet" || type_combo.get_active_text() == "VNC" || type_combo.get_active_text() == "RDP")) {
-            Gtk::MessageDialog md(dialog, "Host cannot be empty for this connection type.", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
-            md.run();
-            return;
+            // Fetch the full ConnectionInfo object
+            ConnectionInfo existing_connection = ConnectionManager::get_connection_by_id(connection_id);
+            if (!existing_connection.id.empty()) { // Check if connection was found
+                 process_connection_dialog(notebook, DialogPurpose::EDIT, &existing_connection);
+            } else {
+                Gtk::Window* top_level_window = dynamic_cast<Gtk::Window*>(notebook.get_toplevel());
+                if (top_level_window) {
+                    Gtk::MessageDialog error_dialog(*top_level_window, "Error", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
+                    error_dialog.set_secondary_text("Could not find the selected connection to edit.");
+                    error_dialog.run();
+                }
+            }
         } else {
-            ConnectionInfo updated_connection = current_connection;
-            updated_connection.name = name_entry.get_text();
-            updated_connection.host = host_entry.get_text();
-
-            std::string port_str = port_entry.get_text();
-            if (!port_str.empty()) {
-                try {
-                    updated_connection.port = std::stoi(port_str);
-                } catch (const std::exception& e) {
-                    Gtk::MessageDialog err_dialog(dialog, "Invalid Port", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
-                    err_dialog.set_secondary_text("Port number is invalid. Please enter a valid number or leave it empty.");
-                    err_dialog.run();
-                    return;
-                }
-            } else {
-                updated_connection.port = 0;
-            }
-            updated_connection.username = user_entry.get_text();
-
-            // --- Read ALL fields back from the dialog ---
-            updated_connection.connection_type = type_combo.get_active_text();
-
-            if (updated_connection.connection_type == "SSH") {
-                updated_connection.auth_method = auth_method_combo.get_active_text();
-                if (updated_connection.auth_method == "Password") {
-                    // Always update the password field with whatever is in the entry
-                    // This ensures empty passwords are saved correctly
-                    updated_connection.password = password_entry.get_text();
-                    updated_connection.ssh_key_path = ""; // Clear SSH key info
-                    updated_connection.ssh_key_passphrase = "";
-                } else if (updated_connection.auth_method == "SSHKey") {
-                    updated_connection.password = ""; // Clear password info
-                    updated_connection.ssh_key_path = ssh_key_path_entry.get_text();
-                    updated_connection.ssh_key_passphrase = ssh_key_passphrase_entry.get_text();
-                }
-                updated_connection.additional_ssh_options = ssh_flags_entry.get_text();
-            } else {
-                // Clear SSH specific fields if not an SSH connection
-                updated_connection.auth_method = "";
-                updated_connection.password = "";
-                updated_connection.ssh_key_path = "";
-                updated_connection.ssh_key_passphrase = "";
-                updated_connection.additional_ssh_options = "";
-            }
-            // --- End reading fields ---
-
-            Glib::ustring selected_folder_id_str = folder_combo.get_active_id();
-            updated_connection.folder_id = selected_folder_id_str.empty() ? "" : selected_folder_id_str.raw();
-
-            // Revert to save_connection, as update_connection does not exist.
-            // The issue is likely within save_connection's update logic.
-            if (ConnectionManager::save_connection(updated_connection)) {
-                if (connections_liststore && connections_treeview) {
-                    populate_connections_treeview(connections_liststore, connection_columns, *connections_treeview);
-                }
-            } else {
-                Gtk::MessageDialog err_dialog(dialog, "Failed to save connection.", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true); // Reverted error message
-                err_dialog.run();
+            Gtk::Window* top_level_window = dynamic_cast<Gtk::Window*>(notebook.get_toplevel());
+            if (top_level_window) {
+                Gtk::MessageDialog info_dialog(*top_level_window, "No Selection", false, Gtk::MESSAGE_INFO, Gtk::BUTTONS_OK, true);
+                info_dialog.set_secondary_text("Please select a connection to edit.");
+                info_dialog.run();
             }
         }
     }
@@ -975,361 +623,7 @@ void edit_connection_dialog() {
 
 // Function to handle adding a new connection
 void add_connection_dialog(Gtk::Notebook& notebook) {
-    Gtk::Dialog dialog("Add New Connection", true /* modal */);
-    dialog.set_default_size(450, 0); // Adjusted default width, height will adapt
-
-    Gtk::Grid* grid = Gtk::manage(new Gtk::Grid());
-    grid->set_hexpand(true); // Ensure the main grid expands horizontally
-    grid->set_border_width(10);
-    grid->set_column_spacing(10);
-    grid->set_row_spacing(10);
-    dialog.get_content_area()->pack_start(*grid, Gtk::PACK_EXPAND_WIDGET);
-
-    std::string initially_selected_folder_id = "";
-    if (connections_treeview) {
-        Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview->get_selection();
-        if (selection) {
-            Gtk::TreeModel::iterator iter = selection->get_selected();
-            if (iter) {
-                Gtk::TreeModel::Row row = *iter;
-                if (row[connection_columns.is_folder]) {
-                    initially_selected_folder_id = static_cast<Glib::ustring>(row[connection_columns.id]);
-                }
-            }
-        }
-    }
-
-    Gtk::Label folder_label("Folder:");
-    folder_label.set_halign(Gtk::ALIGN_START);
-    Gtk::ComboBoxText folder_combo;
-    folder_combo.set_hexpand(true);
-    std::vector<FolderInfo> folders = ConnectionManager::load_folders();
-    folder_combo.append("", "None (Root Level)");
-    for (const auto& folder : folders) {
-        folder_combo.append(folder.id, folder.name);
-    }
-    if (!initially_selected_folder_id.empty()) {
-        folder_combo.set_active_id(initially_selected_folder_id);
-    } else {
-        folder_combo.set_active(0);
-    }
-
-    Gtk::Label type_label("Connection Type:");
-    type_label.set_halign(Gtk::ALIGN_START);
-    Gtk::ComboBoxText type_combo;
-    type_combo.set_hexpand(true);
-    type_combo.append("SSH", "SSH");
-    type_combo.append("Telnet", "Telnet");
-    type_combo.append("VNC", "VNC");
-    type_combo.append("RDP", "RDP");
-    type_combo.set_active_text("SSH");
-
-    Gtk::Label name_label("Connection Name:");
-    name_label.set_halign(Gtk::ALIGN_START);
-    Gtk::Entry name_entry;
-    name_entry.set_hexpand(true);
-
-    Gtk::Label host_label("Host:");
-    host_label.set_halign(Gtk::ALIGN_START);
-    Gtk::Entry host_entry;
-    host_entry.set_hexpand(true);
-
-    Gtk::Label port_label("Port:");
-    port_label.set_halign(Gtk::ALIGN_START);
-    Gtk::Entry port_entry;
-    port_entry.set_hexpand(true);
-
-    // SSH Flags
-    Gtk::Label ssh_flags_label("SSH Flags:");
-    ssh_flags_label.set_halign(Gtk::ALIGN_START);
-    Gtk::Entry ssh_flags_entry;
-    ssh_flags_entry.set_hexpand(true);
-
-    // Username
-    Gtk::Label user_label("Username:");
-    user_label.set_halign(Gtk::ALIGN_START);
-    Gtk::Entry user_entry;
-    user_entry.set_hexpand(true);
-
-    // SSH Specific Fields
-    Gtk::Label auth_method_label("Auth Method:");
-    auth_method_label.set_halign(Gtk::ALIGN_START);
-    Gtk::ComboBoxText auth_method_combo;
-    auth_method_combo.append("Password", "Password");
-    auth_method_combo.append("SSHKey", "SSHKey");
-    auth_method_combo.set_hexpand(true);
-
-    Gtk::Label password_label("Password:");
-    password_label.set_halign(Gtk::ALIGN_START);
-    password_label.set_markup("<span foreground='red'>Password:</span>");
-    Gtk::Entry password_entry;
-    password_entry.set_visibility(false); // Mask password
-    password_entry.set_hexpand(true);
-    const char* password_security_warning_text =
-        "WARNING: Password will be stored in plain text and may be visible in the process list. "
-        "This is inherently insecure. Consider using SSH keys or do not save the password here. "
-        "You will be prompted for the password when connecting.";
-    password_entry.set_tooltip_text(password_security_warning_text);
-
-    // Custom popup tooltip window for password - declared here, connected in update_visibility
-    Gtk::Window* password_tooltip_window = nullptr;
-
-    // Show tooltip when password field gets focus
-    password_entry.signal_focus_in_event().connect([password_security_warning_text, &password_tooltip_window, &password_entry](GdkEventFocus*) -> bool {
-        if (!password_tooltip_window) {
-            password_tooltip_window = new Gtk::Window(Gtk::WINDOW_POPUP);
-            password_tooltip_window->set_name("tooltip");
-            password_tooltip_window->set_border_width(2);
-
-            // Create an event box to handle the background color
-            Gtk::EventBox* event_box = Gtk::manage(new Gtk::EventBox());
-            event_box->override_background_color(Gdk::RGBA("orange"));
-
-            Gtk::Label* tooltip_label = Gtk::manage(new Gtk::Label());
-            tooltip_label->set_text(password_security_warning_text);
-            tooltip_label->set_line_wrap(true);
-            tooltip_label->set_max_width_chars(40);
-            tooltip_label->set_justify(Gtk::JUSTIFY_LEFT);
-            tooltip_label->set_margin_start(8);
-            tooltip_label->set_margin_end(8);
-            tooltip_label->set_margin_top(4);
-            tooltip_label->set_margin_bottom(4);
-
-            event_box->add(*tooltip_label);
-            password_tooltip_window->add(*event_box);
-
-            // Set a fixed size for the tooltip
-            password_tooltip_window->set_default_size(350, 60);
-            password_tooltip_window->set_resizable(false);
-        }
-
-        int x, y;
-        password_entry.get_window()->get_origin(x, y);
-        int entry_height = password_entry.get_allocation().get_height();
-        // Position tooltip 2 pixels below the password field
-        password_tooltip_window->move(x, y + entry_height + 2);
-        password_tooltip_window->show_all();
-        return false;
-    });
-
-    // Hide tooltip when password field loses focus
-    password_entry.signal_focus_out_event().connect([&password_tooltip_window](GdkEventFocus*) -> bool {
-        if (password_tooltip_window) {
-            password_tooltip_window->hide();
-        }
-        return false;
-    });
-
-    Gtk::Label ssh_key_label("SSH Key Path:");
-    ssh_key_label.set_halign(Gtk::ALIGN_START);
-    Gtk::Entry ssh_key_path_entry; // Instance for add dialog
-    ssh_key_path_entry.set_hexpand(true);
-    ssh_key_path_entry.set_editable(true); // <<< MAKE SURE THIS IS TRUE
-    Gtk::Button ssh_key_browse_button("Browse...");
-
-    Gtk::Label ssh_key_passphrase_label("SSH Passphrase:");
-    ssh_key_passphrase_label.set_halign(Gtk::ALIGN_START);
-    Gtk::Entry ssh_key_passphrase_entry;
-    ssh_key_passphrase_entry.set_visibility(false); // Mask passphrase
-    ssh_key_passphrase_entry.set_hexpand(true);
-    const char* passphrase_security_warning_text =
-        "WARNING: Passphrase will be stored in plain text. Consider agent forwarding or leaving blank if your key has no passphrase.";
-    ssh_key_passphrase_entry.set_tooltip_text(passphrase_security_warning_text);
-
-    // Attach to grid
-    int currentRow = 0;
-    grid->attach(folder_label, 0, currentRow, 1, 1);
-    grid->attach(folder_combo, 1, currentRow++, 2, 1);
-    grid->attach(type_label, 0, currentRow, 1, 1);
-    grid->attach(type_combo, 1, currentRow++, 2, 1);
-    grid->attach(name_label, 0, currentRow, 1, 1);
-    grid->attach(name_entry, 1, currentRow++, 2, 1);
-    grid->attach(host_label, 0, currentRow, 1, 1);
-    grid->attach(host_entry, 1, currentRow++, 2, 1);
-    grid->attach(port_label, 0, currentRow, 1, 1);
-    grid->attach(port_entry, 1, currentRow++, 2, 1);
-    grid->attach(ssh_flags_label, 0, currentRow, 1, 1);
-    grid->attach(ssh_flags_entry, 1, currentRow++, 2, 1);
-    grid->attach(user_label, 0, currentRow, 1, 1);
-    grid->attach(user_entry, 1, currentRow++, 2, 1);
-    grid->attach(auth_method_label, 0, currentRow, 1, 1);
-    grid->attach(auth_method_combo, 1, currentRow++, 2, 1);
-    grid->attach(password_label, 0, currentRow, 1, 1);
-    grid->attach(password_entry, 1, currentRow++, 2, 1);
-    grid->attach(ssh_key_label, 0, currentRow, 1, 1);
-    grid->attach(ssh_key_path_entry, 1, currentRow,   1, 1); // Entry takes 1 column
-    grid->attach(ssh_key_browse_button, 2, currentRow++, 1, 1); // Button takes 1 column
-    grid->attach(ssh_key_passphrase_label, 0, currentRow, 1, 1);
-    grid->attach(ssh_key_passphrase_entry, 1, currentRow++, 2, 1);
-
-    ssh_key_browse_button.signal_clicked().connect([&dialog, &ssh_key_path_entry]() {
-        Gtk::FileChooserDialog fc_dialog(dialog, "Select SSH Private Key", Gtk::FILE_CHOOSER_ACTION_OPEN);
-        fc_dialog.add_button("_Cancel", Gtk::RESPONSE_CANCEL);
-        fc_dialog.add_button("_Open", Gtk::RESPONSE_OK);
-        auto filter_any = Gtk::FileFilter::create();
-        filter_any->set_name("All files");
-        filter_any->add_pattern("*");
-        fc_dialog.add_filter(filter_any);
-        const char* home_dir = std::getenv("HOME");
-        if (home_dir) fc_dialog.set_current_folder(home_dir);
-        if (fc_dialog.run() == Gtk::RESPONSE_OK) {
-            ssh_key_path_entry.set_text(fc_dialog.get_filename());
-        }
-    });
-
-    auto update_visibility = [&]() {
-        bool is_ssh = (type_combo.get_active_text() == "SSH");
-
-        ssh_flags_label.set_visible(is_ssh);
-        ssh_flags_entry.set_visible(is_ssh);
-        auth_method_label.set_visible(is_ssh);
-        auth_method_combo.set_visible(is_ssh);
-
-        if (is_ssh) {
-            bool is_password_auth = (auth_method_combo.get_active_text() == "Password");
-            bool is_ssh_key_auth = (auth_method_combo.get_active_text() == "SSHKey");
-
-            password_label.set_visible(is_password_auth);
-            password_entry.set_visible(is_password_auth);
-
-            ssh_key_label.set_visible(is_ssh_key_auth);
-            ssh_key_path_entry.set_visible(is_ssh_key_auth);
-            ssh_key_browse_button.set_visible(is_ssh_key_auth);
-            ssh_key_passphrase_label.set_visible(is_ssh_key_auth);
-            ssh_key_passphrase_entry.set_visible(is_ssh_key_auth);
-
-        } else {
-            // Not SSH: hide all specific SSH input fields and their labels
-            password_label.set_visible(false);
-            password_entry.set_visible(false);
-            ssh_key_label.set_visible(false);
-            ssh_key_path_entry.set_visible(false);
-            ssh_key_browse_button.set_visible(false);
-            ssh_key_passphrase_label.set_visible(false);
-            ssh_key_passphrase_entry.set_visible(false);
-
-            // Also clear their content and reset auth_method_combo
-            auth_method_combo.set_active_text("Password"); // Reset to default
-            password_entry.set_text("");
-            ssh_key_path_entry.set_text("");
-            ssh_key_passphrase_entry.set_text("");
-            ssh_flags_entry.set_text(""); // Clear SSH Flags content if not SSH
-        }
-        dialog.queue_resize(); // Optional: if layout changes are complex
-    };
-
-    // Auto-fill port based on connection type
-    type_combo.signal_changed().connect([&type_combo, &port_entry, &update_visibility]() {
-        std::string selected_type = type_combo.get_active_text();
-        std::string current_port_text = port_entry.get_text();
-        bool port_was_default_for_old_type = false;
-        if (current_port_text == "22") port_was_default_for_old_type = true;
-        else if (current_port_text == "23") port_was_default_for_old_type = true;
-        else if (current_port_text == "5900") port_was_default_for_old_type = true;
-        else if (current_port_text == "3389") port_was_default_for_old_type = true;
-
-        if (current_port_text.empty() || port_was_default_for_old_type) {
-            if (selected_type == "SSH") port_entry.set_text("22");
-            else if (selected_type == "Telnet") port_entry.set_text("23");
-            else if (selected_type == "VNC") port_entry.set_text("5900");
-            else if (selected_type == "RDP") port_entry.set_text("3389");
-            else if (port_was_default_for_old_type) port_entry.set_text(""); // Clear if old was default and new has no default
-        }
-        update_visibility(); // Call after potentially changing connection type
-    });
-
-    auth_method_combo.signal_changed().connect(update_visibility);
-
-    // Ensure all widgets that might be initially hidden by update_visibility are shown first,
-    // then allow update_visibility to hide them as needed.
-    // This means all child widgets of the dialog's content area should be shown.
-    dialog.get_content_area()->show_all_children();
-    // If buttons are in action area, ensure they are shown too, though add_button usually handles this.
-    // dialog.get_action_area()->show_all_children(); // Less common to need this explicitly
-
-    dialog.add_button("_Cancel", Gtk::RESPONSE_CANCEL);
-    dialog.add_button("_Save", Gtk::RESPONSE_OK);
-
-    dialog.show_all(); // Show the dialog itself and its initial contents
-
-    // Set initial visibility correctly after dialog is shown and all widgets are realized
-    update_visibility();
-
-    // Auto-fill port if empty and type is SSH (for the very first time dialog appears)
-    if (port_entry.get_text().empty() && type_combo.get_active_text() == "SSH") {
-        port_entry.set_text("22");
-    }
-
-    int response = dialog.run();
-
-    if (response == Gtk::RESPONSE_OK) {
-        if (name_entry.get_text().empty()) {
-            Gtk::MessageDialog md(dialog, "Connection name cannot be empty.", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
-            md.run();
-            return; // Or re-show dialog, or specific handling
-        }
-        ConnectionInfo new_connection;
-        new_connection.id = ConnectionManager::generate_connection_id();
-        new_connection.name = name_entry.get_text();
-        new_connection.host = host_entry.get_text();
-
-        std::string port_str = port_entry.get_text();
-        if (!port_str.empty()) {
-            try {
-                new_connection.port = std::stoi(port_str);
-            } catch (const std::invalid_argument& ia) {
-                Gtk::MessageDialog err_dialog(dialog, "Invalid Port Number", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
-                err_dialog.run();
-                return;
-            } catch (const std::out_of_range& oor) {
-                Gtk::MessageDialog err_dialog(dialog, "Port Number Out of Range", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
-                err_dialog.run();
-                return;
-            }
-        } else {
-            new_connection.port = 0; // Or a default based on type if desired
-        }
-
-        new_connection.username = user_entry.get_text();
-
-        // --- Read ALL fields back from the dialog ---
-        new_connection.connection_type = type_combo.get_active_text();
-
-        if (new_connection.connection_type == "SSH") {
-            new_connection.auth_method = auth_method_combo.get_active_text();
-            if (new_connection.auth_method == "Password") {
-                new_connection.password = password_entry.get_text();
-                // Clear SSH key fields for hygiene
-                new_connection.ssh_key_path = "";
-                new_connection.ssh_key_passphrase = "";
-            } else if (new_connection.auth_method == "SSHKey") {
-                new_connection.password = "";
-                new_connection.ssh_key_path = ssh_key_path_entry.get_text();
-                new_connection.ssh_key_passphrase = ssh_key_passphrase_entry.get_text();
-            }
-            new_connection.additional_ssh_options = ssh_flags_entry.get_text();
-        } else {
-            // Clear SSH specific fields if not an SSH connection
-            new_connection.auth_method = "";
-            new_connection.password = "";
-            new_connection.ssh_key_path = "";
-            new_connection.ssh_key_passphrase = "";
-            new_connection.additional_ssh_options = "";
-        }
-        // --- End reading fields ---
-
-        Glib::ustring selected_folder_id_str = folder_combo.get_active_id();
-        new_connection.folder_id = selected_folder_id_str.empty() ? "" : selected_folder_id_str.raw();
-
-        if (ConnectionManager::save_connection(new_connection)) {
-            if (connections_liststore && connections_treeview) {
-                populate_connections_treeview(connections_liststore, connection_columns, *connections_treeview);
-            }
-        } else {
-            Gtk::MessageDialog err_dialog(dialog, "Failed to save connection.", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
-            err_dialog.run();
-        }
-    }
+    process_connection_dialog(notebook, DialogPurpose::ADD);
 }
 
 // Function to build the menu
@@ -1359,8 +653,10 @@ void build_menu(Gtk::Window& parent_window, Gtk::MenuBar& menubar, Gtk::Notebook
     connections_submenu->append(*delete_folder_item);
 
     connections_submenu->append(*add_connection_item);
-    edit_connection_menu_item = Gtk::manage(new Gtk::MenuItem("Edit Connection", true)); // Changed from _Connection
-    edit_connection_menu_item->signal_activate().connect(sigc::ptr_fun(&edit_connection_dialog)); // Connect to handler
+    edit_connection_menu_item = Gtk::manage(new Gtk::MenuItem("_Edit Connection", true)); // Changed from _Connection
+    edit_connection_menu_item->signal_activate().connect([&notebook]() {
+        edit_connection_dialog(notebook);
+    });
     edit_connection_menu_item->set_sensitive(false); // Initially disabled
     connections_submenu->append(*edit_connection_menu_item);
 
@@ -1569,7 +865,9 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
     edit_conn_button->set_margin_end(1);
     edit_conn_button->set_margin_top(0);
     edit_conn_button->set_margin_bottom(0);
-    edit_conn_button->signal_clicked().connect(sigc::ptr_fun(&edit_connection_dialog));
+    edit_conn_button->signal_clicked().connect([&notebook]() {
+        edit_connection_dialog(notebook);
+    });
     edit_connection_menu_item_toolbar = edit_conn_button; // Assign to global pointer
     toolbar->append(*edit_conn_button);
 
@@ -1861,31 +1159,28 @@ int main(int argc, char* argv[]) {
     // --- Instantiate global GTK widgets AFTER Gtk::Main ---
     connections_treeview = new Gtk::TreeView();
     info_frame = new Gtk::Frame();
-    info_frame->set_hexpand(true); // Allow frame to expand horizontally
+    info_frame->set_hexpand(true);
 
     info_grid = new Gtk::Grid();
-    info_grid->set_hexpand(true); // Allow grid to expand horizontally
+    info_grid->set_hexpand(true);
 
-    host_value_label = new Gtk::Label();
+    host_value_label = new Gtk::Label("", Gtk::ALIGN_START, Gtk::ALIGN_START);
     host_value_label->set_line_wrap(true);
     host_value_label->set_line_wrap_mode(Pango::WRAP_WORD_CHAR);
-    host_value_label->set_hexpand(true); // Allow label to expand horizontally
-    host_value_label->set_xalign(0.0f); // Align text to the left within the label
-    host_value_label->set_valign(Gtk::ALIGN_START); // Align content to the top
+    host_value_label->set_hexpand(true);
+    host_value_label->set_xalign(0.0f);
 
-    type_value_label = new Gtk::Label();
+    type_value_label = new Gtk::Label("", Gtk::ALIGN_START, Gtk::ALIGN_START);
     type_value_label->set_line_wrap(true);
     type_value_label->set_line_wrap_mode(Pango::WRAP_WORD_CHAR);
-    type_value_label->set_hexpand(true); // Allow label to expand horizontally
-    type_value_label->set_xalign(0.0f); // Align text to the left within the label
-    type_value_label->set_valign(Gtk::ALIGN_START); // Align content to the top
+    type_value_label->set_hexpand(true);
+    type_value_label->set_xalign(0.0f);
 
-    port_value_label = new Gtk::Label();
+    port_value_label = new Gtk::Label("", Gtk::ALIGN_START, Gtk::ALIGN_START);
     port_value_label->set_line_wrap(true);
     port_value_label->set_line_wrap_mode(Pango::WRAP_WORD_CHAR);
-    port_value_label->set_hexpand(true); // Allow label to expand horizontally
-    port_value_label->set_xalign(0.0f); // Align text to the left within the label
-    port_value_label->set_valign(Gtk::ALIGN_START); // Align content to the top
+    port_value_label->set_hexpand(true);
+    port_value_label->set_xalign(0.0f);
     // --- End of instantiation ---
 
     // Create a vertical box to hold the main content
@@ -1924,7 +1219,7 @@ int main(int argc, char* argv[]) {
                     *connections_treeview, connections_liststore, connection_columns, notebook);
 
     // Setup the Info Frame
-    Gtk::Label* frame_title_label = Gtk::manage(new Gtk::Label());
+    Gtk::Label* frame_title_label = Gtk::manage(new Gtk::Label("", Gtk::ALIGN_START));
     frame_title_label->set_markup("<b>Connection Information</b>");
     info_frame->set_label_widget(*frame_title_label);
     info_frame->set_shadow_type(Gtk::SHADOW_ETCHED_IN);
@@ -1938,28 +1233,19 @@ int main(int argc, char* argv[]) {
     info_frame->add(*info_grid);
 
     // Add labels to the grid - Type, Hostname, Port order
-    Gtk::Label type_label;
+    Gtk::Label type_label("Type", Gtk::ALIGN_START, Gtk::ALIGN_START);
     type_label.set_markup("<b>Type:</b>");
-    type_label.set_halign(Gtk::ALIGN_START);
-    type_label.set_valign(Gtk::ALIGN_START);
     info_grid->attach(type_label, 0, 0, 1, 1);
-    type_value_label->set_halign(Gtk::ALIGN_START);
     info_grid->attach(*type_value_label, 1, 0, 1, 1);
 
-    Gtk::Label host_label;
+    Gtk::Label host_label("Hostname", Gtk::ALIGN_START, Gtk::ALIGN_START);
     host_label.set_markup("<b>Hostname:</b>");
-    host_label.set_halign(Gtk::ALIGN_START);
-    host_label.set_valign(Gtk::ALIGN_START);
     info_grid->attach(host_label, 0, 1, 1, 1);
-    host_value_label->set_halign(Gtk::ALIGN_START);
     info_grid->attach(*host_value_label, 1, 1, 1, 1);
 
-    Gtk::Label port_label;
+    Gtk::Label port_label("Port", Gtk::ALIGN_START, Gtk::ALIGN_START);
     port_label.set_markup("<b>Port:</b>");
-    port_label.set_halign(Gtk::ALIGN_START);
-    port_label.set_valign(Gtk::ALIGN_START);
     info_grid->attach(port_label, 0, 2, 1, 1);
-    port_value_label->set_halign(Gtk::ALIGN_START);
     info_grid->attach(*port_value_label, 1, 2, 1, 1);
 
     // Pack both frames into the left side box
@@ -2044,7 +1330,7 @@ int main(int argc, char* argv[]) {
                 }
 
                 // Create tab label with connection name
-                Gtk::Label* label = Gtk::manage(new Gtk::Label(conn_name));
+                Gtk::Label* label = Gtk::manage(new Gtk::Label(conn_name, Gtk::ALIGN_START));
                 // Create terminal data for cleanup
                 TerminalData* term_data = new TerminalData();
                 term_data->notebook = &notebook;
