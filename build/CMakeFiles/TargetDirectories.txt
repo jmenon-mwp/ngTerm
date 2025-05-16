@@ -1,0 +1,7 @@
+/home/jmenon/Personal/ngTerm/build/CMakeFiles/ngTerm.dir
+/home/jmenon/Personal/ngTerm/build/CMakeFiles/edit_cache.dir
+/home/jmenon/Personal/ngTerm/build/CMakeFiles/rebuild_cache.dir
+/home/jmenon/Personal/ngTerm/build/CMakeFiles/list_install_components.dir
+/home/jmenon/Personal/ngTerm/build/CMakeFiles/install.dir
+/home/jmenon/Personal/ngTerm/build/CMakeFiles/install/local.dir
+/home/jmenon/Personal/ngTerm/build/CMakeFiles/install/strip.dir
