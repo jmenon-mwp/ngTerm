@@ -133,7 +133,7 @@ bool Config::show_preferences_dialog(Gtk::Window& parent_window) {
     window_box.set_margin_top(6);
     window_box.set_margin_bottom(6);
 
-    Gtk::CheckButton save_coords_check("Save window position and size on exit");
+    Gtk::CheckButton save_coords_check("Save window size on exit");
     save_coords_check.set_active(get_save_window_coords());
 
     window_box.pack_start(save_coords_check, Gtk::PACK_SHRINK);
@@ -160,10 +160,7 @@ bool Config::show_preferences_dialog(Gtk::Window& parent_window) {
 
         // If save_window_coords is disabled, remove window coordinates
         if (!save_coords_check.get_active()) {
-            if (new_config.contains("window_x") || new_config.contains("window_y") ||
-                new_config.contains("window_width") || new_config.contains("window_height")) {
-                new_config.erase("window_x");
-                new_config.erase("window_y");
+            if (new_config.contains("window_width") || new_config.contains("window_height")) {
                 new_config.erase("window_width");
                 new_config.erase("window_height");
                 config_changed = true;

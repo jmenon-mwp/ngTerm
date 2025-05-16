@@ -39,12 +39,16 @@ Gtk::Label* port_value_label = nullptr;
 // Global MenuItems for Edit functionality
 Gtk::MenuItem* edit_folder_menu_item = nullptr;
 Gtk::MenuItem* edit_connection_menu_item = nullptr;
+Gtk::MenuItem* duplicate_connection_item = nullptr;
 
 // Global ToolButtons for Edit/Delete functionality on the toolbar
 Gtk::ToolButton* edit_folder_menu_item_toolbar = nullptr;
-Gtk::ToolButton* delete_folder_menu_item_toolbar = nullptr;
 Gtk::ToolButton* edit_connection_menu_item_toolbar = nullptr;
+Gtk::ToolButton* duplicate_connection_menu_item_toolbar = nullptr;
+Gtk::ToolButton* delete_folder_menu_item_toolbar = nullptr;
 Gtk::ToolButton* delete_connection_menu_item_toolbar = nullptr;
+Gtk::ToolButton* add_folder_menu_item_toolbar = nullptr;
+Gtk::ToolButton* add_connection_menu_item_toolbar = nullptr;
 
 // Track open connections and their tab indices
 std::map<std::string, int> open_connections; // Maps connection ID to tab index
@@ -80,7 +84,6 @@ void on_connection_selection_changed() {
             if (is_connection) {
                 host_value_label->set_text(row[connection_columns.host]);
                 type_value_label->set_text(row[connection_columns.connection_type]);
-                // Convert port to string for display
                 int port = row[connection_columns.port];
                 port_value_label->set_text(port > 0 ? std::to_string(port) : "");
                 is_connection_selected = true;
@@ -629,121 +632,109 @@ void add_connection_dialog(Gtk::Notebook& notebook) {
     process_connection_dialog(notebook, DialogPurpose::ADD);
 }
 
+// Function to handle deleting a connection
+void delete_connection_dialog(Gtk::Notebook& notebook, const Glib::ustring& conn_id, const Glib::ustring& conn_name) {
+    Gtk::Window* parent_window = dynamic_cast<Gtk::Window*>(notebook.get_toplevel());
+    if (!parent_window) {
+        std::cerr << "Could not get parent window" << std::endl;
+        return;
+    }
+
+    Gtk::MessageDialog confirmation_dialog(*parent_window, "Delete Connection", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_YES_NO, true);
+    confirmation_dialog.set_secondary_text("Are you sure you want to delete the connection '" + conn_name + "'?" +
+        "\n\nThis action cannot be undone.");
+
+    if (confirmation_dialog.run() == Gtk::RESPONSE_YES) {
+        if (ConnectionManager::delete_connection(conn_id)) {
+            if (connections_liststore && connections_treeview) {
+                populate_connections_treeview(connections_liststore, connection_columns, *connections_treeview);
+            }
+        } else {
+            Gtk::MessageDialog error_dialog(*parent_window, "Error", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
+            error_dialog.set_secondary_text("Could not delete the connection '" + conn_name + "'." +
+                "\n\nPlease check the error log for more details.");
+            error_dialog.run();
+        }
+    }
+}
+
 // Function to build the menu
 void build_menu(Gtk::Window& parent_window, Gtk::MenuBar& menubar, Gtk::Notebook& notebook, Gtk::TreeView& connections_treeview_ref,
                 Glib::RefPtr<Gtk::TreeStore>& liststore_ref, ConnectionColumns& columns_ref) { // Changed to ConnectionColumns
-    // Create "Options" menu (formerly "File" menu, renamed and repurposed)
-    Gtk::Menu* connections_submenu = Gtk::manage(new Gtk::Menu());
-    Gtk::MenuItem* connections_menu_item = Gtk::manage(new Gtk::MenuItem("Options", true)); // Renamed, changed from _Connections
-    connections_menu_item->set_submenu(*connections_submenu);
 
-    // Items from former Settings menu - now in Connections
+    Gtk::Menu* options_submenu = Gtk::manage(new Gtk::Menu());
+    Gtk::Menu* help_submenu = Gtk::manage(new Gtk::Menu());
+    Gtk::MenuItem* options_menu_item = Gtk::manage(new Gtk::MenuItem("Options", true)); // Renamed, changed from _Connections
     Gtk::MenuItem* add_folder_item = Gtk::manage(new Gtk::MenuItem("Add Folder"));
+    Gtk::MenuItem* edit_folder_menu_item = Gtk::manage(new Gtk::MenuItem("Edit Folder"));
+    Gtk::MenuItem* delete_folder_item = Gtk::manage(new Gtk::MenuItem("Delete Folder"));
     Gtk::MenuItem* add_connection_item = Gtk::manage(new Gtk::MenuItem("Add Connection"));
+    Gtk::MenuItem* edit_connection_menu_item = Gtk::manage(new Gtk::MenuItem("Edit Connection", true));
+    Gtk::MenuItem* duplicate_connection_item = Gtk::manage(new Gtk::MenuItem("Duplicate Connection"));
     Gtk::MenuItem* delete_connection_item = Gtk::manage(new Gtk::MenuItem("Delete Connection"));
-    Gtk::SeparatorMenuItem* separator1 = Gtk::manage(new Gtk::SeparatorMenuItem());
     Gtk::MenuItem* preferences_item = Gtk::manage(new Gtk::MenuItem("Preferences"));
+    Gtk::MenuItem* exit_item = Gtk::manage(new Gtk::MenuItem("_Exit", true));
+    Gtk::MenuItem* help_menu_item = Gtk::manage(new Gtk::MenuItem("Help"));
+    Gtk::MenuItem* about_item = Gtk::manage(new Gtk::MenuItem("About"));
+    Gtk::SeparatorMenuItem* separator1 = Gtk::manage(new Gtk::SeparatorMenuItem());
+    Gtk::SeparatorMenuItem* separator2 = Gtk::manage(new Gtk::SeparatorMenuItem());
 
-    connections_submenu->append(*add_folder_item);
-    edit_folder_menu_item = Gtk::manage(new Gtk::MenuItem("Edit Folder")); // Changed text for clarity, removed underscore
+    options_menu_item->set_submenu(*options_submenu);
+    options_submenu->append(*add_folder_item);
     edit_folder_menu_item->signal_activate().connect([&parent_window, &connections_treeview_ref, &liststore_ref, &columns_ref]() {
         FolderOps::edit_folder(parent_window, connections_treeview_ref, liststore_ref, columns_ref);
     });
-    connections_submenu->append(*edit_folder_menu_item);
-
-    // Declare and append Delete Folder item
-    Gtk::MenuItem* delete_folder_item = Gtk::manage(new Gtk::MenuItem("Delete Folder")); // Removed underscore and fixed typo
-    connections_submenu->append(*delete_folder_item);
-
-    connections_submenu->append(*add_connection_item);
-    edit_connection_menu_item = Gtk::manage(new Gtk::MenuItem("_Edit Connection", true)); // Changed from _Connection
+    options_submenu->append(*edit_folder_menu_item);
+    options_submenu->append(*delete_folder_item);
+    options_submenu->append(*add_connection_item);
     edit_connection_menu_item->signal_activate().connect([&notebook]() {
         edit_connection_dialog(notebook);
     });
     edit_connection_menu_item->set_sensitive(false); // Initially disabled
-    connections_submenu->append(*edit_connection_menu_item);
-
-    // Add Duplicate Connection item
-    Gtk::MenuItem* duplicate_connection_item = Gtk::manage(new Gtk::MenuItem("Duplicate Connection"));
+    options_submenu->append(*edit_connection_menu_item);
     duplicate_connection_item->signal_activate().connect(sigc::bind(sigc::ptr_fun(&duplicate_connection_dialog), std::ref(notebook)));
-    connections_submenu->append(*duplicate_connection_item);
-
-    connections_submenu->append(*delete_connection_item);
-    connections_submenu->append(*separator1);
-    connections_submenu->append(*preferences_item);
-
-    // Separator before Exit
-    Gtk::SeparatorMenuItem* separator2 = Gtk::manage(new Gtk::SeparatorMenuItem());
-    connections_submenu->append(*separator2);
-
-    // Exit item (from former File menu)
-    Gtk::MenuItem* exit_item = Gtk::manage(new Gtk::MenuItem("_Exit", true));
+    options_submenu->append(*duplicate_connection_item);
+    options_submenu->append(*delete_connection_item);
+    options_submenu->append(*separator1);
+    options_submenu->append(*preferences_item);
+    options_submenu->append(*separator2);
     exit_item->signal_activate().connect([](){
         gtk_main_quit();
     });
-    connections_submenu->append(*exit_item);
+    options_submenu->append(*exit_item);
 
-    // Create Help menu (remains the same)
-    Gtk::MenuItem* help_menu_item = Gtk::manage(new Gtk::MenuItem("Help"));
-    Gtk::Menu* help_submenu = Gtk::manage(new Gtk::Menu());
     help_menu_item->set_submenu(*help_submenu);
-    Gtk::MenuItem* about_item = Gtk::manage(new Gtk::MenuItem("About"));
     help_submenu->append(*about_item);
 
-    // Add menus to menubar (only Connections and Help)
-    menubar.append(*connections_menu_item);
+    menubar.append(*options_menu_item);
     menubar.append(*help_menu_item);
 
-    // Connect menu item handlers (signal_activate calls remain the same,
-    // as the Gtk::MenuItem* variables are still valid)
     add_folder_item->signal_activate().connect([&parent_window, &connections_treeview_ref, &liststore_ref, &columns_ref]() {
         FolderOps::add_folder(parent_window, connections_treeview_ref, liststore_ref, columns_ref);
     });
 
-    // Connect delete_folder_item to FolderOps::delete_folder
     delete_folder_item->signal_activate().connect([&parent_window, &connections_treeview_ref, &liststore_ref, &columns_ref]() {
         FolderOps::delete_folder(parent_window, connections_treeview_ref, liststore_ref, columns_ref);
     });
 
     add_connection_item->signal_activate().connect(sigc::bind(sigc::ptr_fun(&add_connection_dialog), std::ref(notebook)));
-    delete_connection_item->signal_activate().connect([&connections_treeview_ref, &liststore_ref, &columns_ref, &parent_window]() { // Added parent_window capture
-        Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview_ref.get_selection();
-        Gtk::TreeModel::iterator iter = selection->get_selected();
-
-        if (!iter) {
-            Gtk::MessageDialog warning_dialog(parent_window, "No Selection", false, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_OK, true);
-            warning_dialog.set_secondary_text("Please select a connection to delete.");
-            warning_dialog.run();
-            return;
-        }
-
-        bool is_folder = (*iter)[columns_ref.is_folder];
-        if (is_folder) {
-            Gtk::MessageDialog warning_dialog(parent_window, "Cannot Delete Folder Here", false, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_OK, true);
-            warning_dialog.set_secondary_text("This option is for deleting connections. To delete a folder, use the dedicated 'Delete Folder' option.");
-            warning_dialog.run();
-            return;
-        }
-
-        Glib::ustring connection_name = static_cast<Glib::ustring>((*iter)[columns_ref.name]);
-        Glib::ustring connection_id = static_cast<Glib::ustring>((*iter)[columns_ref.id]);
-
-        Gtk::MessageDialog confirm_dialog(parent_window, "Confirm Delete", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_YES_NO, true);
-        confirm_dialog.set_secondary_text("Are you sure you want to delete the connection: '" + connection_name + "'?");
-        int response = confirm_dialog.run();
-
-        if (response == Gtk::RESPONSE_YES) {
-            if (ConnectionManager::delete_connection(connection_id)) {
-                if (connections_liststore && connections_treeview) {
-                    populate_connections_treeview(liststore_ref, columns_ref, connections_treeview_ref);
+    delete_connection_item->signal_activate().connect(
+        [&notebook, &columns_ref, &liststore_ref]() {
+            if (!connections_treeview) return;
+            Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview->get_selection();
+            if (selection) {
+                Gtk::TreeModel::iterator iter = selection->get_selected();
+                if (iter) {
+                    bool is_connection = (*iter)[columns_ref.is_connection];
+                    if (is_connection) {
+                        Glib::ustring conn_id = static_cast<Glib::ustring>((*iter)[columns_ref.id]);
+                        Glib::ustring conn_name = static_cast<Glib::ustring>((*iter)[columns_ref.name]);
+                        delete_connection_dialog(notebook, conn_id, conn_name);
+                    }
                 }
-            } else {
-                Gtk::MessageDialog error_dialog(parent_window, "Delete Failed", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
-                error_dialog.set_secondary_text("Could not delete the connection: '" + connection_name + "'.");
-                error_dialog.run();
             }
         }
-    });
+    );
 
     preferences_item->signal_activate().connect([&parent_window]() {
         Config::show_preferences_dialog(parent_window);
@@ -1133,11 +1124,26 @@ int main(int argc, char* argv[]) {
     edit_conn_button->set_margin_end(1);
     edit_conn_button->set_margin_top(0);
     edit_conn_button->set_margin_bottom(0);
-    edit_conn_button->signal_clicked().connect([notebook_ref = std::ref(notebook)]() {
-        edit_connection_dialog(notebook_ref.get());
-    });
+    edit_conn_button->signal_clicked().connect(
+        [&notebook]() { edit_connection_dialog(notebook); }
+    );
     edit_connection_menu_item_toolbar = edit_conn_button;
     toolbar->append(*edit_conn_button);
+
+    // Duplicate Connection Button
+    Gtk::ToolButton* dupe_conn_button = Gtk::manage(new Gtk::ToolButton());
+    Gtk::Image* dupe_conn_icon = create_icon("images/dupeconn.png");
+    dupe_conn_button->set_icon_widget(*dupe_conn_icon);
+    dupe_conn_button->set_tooltip_text("Duplicate Connection");
+    dupe_conn_button->set_margin_start(1);
+    dupe_conn_button->set_margin_end(1);
+    dupe_conn_button->set_margin_top(0);
+    dupe_conn_button->set_margin_bottom(0);
+    dupe_conn_button->signal_clicked().connect(
+        [&notebook]() { duplicate_connection_dialog(notebook); }
+    );
+    duplicate_connection_menu_item_toolbar = dupe_conn_button;
+    toolbar->append(*dupe_conn_button);
 
     // Delete Connection Button
     Gtk::ToolButton* delete_conn_button = Gtk::manage(new Gtk::ToolButton());
@@ -1149,7 +1155,7 @@ int main(int argc, char* argv[]) {
     delete_conn_button->set_margin_top(0);
     delete_conn_button->set_margin_bottom(0);
     delete_conn_button->signal_clicked().connect(
-        [window_ref = std::ref(window), &columns_ref, &connections_liststore]() {
+        [&notebook, &columns_ref, &connections_liststore]() {
             if (!connections_treeview) return;
             Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview->get_selection();
             if (selection) {
@@ -1159,29 +1165,8 @@ int main(int argc, char* argv[]) {
                     if (is_connection) {
                         Glib::ustring conn_id = static_cast<Glib::ustring>((*iter)[columns_ref.id]);
                         Glib::ustring conn_name = static_cast<Glib::ustring>((*iter)[columns_ref.name]);
-
-                        Gtk::MessageDialog confirmation_dialog(window_ref.get(), "Delete Connection", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_YES_NO, true);
-                        confirmation_dialog.set_secondary_text("Are you sure you want to delete the connection '" + conn_name + "'?");
-                        if (confirmation_dialog.run() == Gtk::RESPONSE_YES) {
-                            if (ConnectionManager::delete_connection(conn_id)) {
-                                if (connections_liststore && connections_treeview) {
-                                    populate_connections_treeview(connections_liststore, columns_ref, *connections_treeview);
-                                }
-                            } else {
-                                Gtk::MessageDialog error_dialog(window_ref.get(), "Error", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK, true);
-                                error_dialog.set_secondary_text("Could not delete the connection '" + conn_name + "'.");
-                                error_dialog.run();
-                            }
-                        }
-                    } else {
-                        Gtk::MessageDialog info_dialog(window_ref.get(), "Not a Connection", false, Gtk::MESSAGE_INFO, Gtk::BUTTONS_OK, true);
-                        info_dialog.set_secondary_text("Please select a connection to delete.");
-                        info_dialog.run();
+                        delete_connection_dialog(notebook, conn_id, conn_name);
                     }
-                } else {
-                    Gtk::MessageDialog info_dialog(window_ref.get(), "No Selection", false, Gtk::MESSAGE_INFO, Gtk::BUTTONS_OK, true);
-                    info_dialog.set_secondary_text("Please select an item to delete.");
-                    info_dialog.run();
                 }
             }
         }
