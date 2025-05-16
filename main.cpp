@@ -1,33 +1,10 @@
-#include <gtkmm.h>
-#include <vte/vte.h>
-#include <iostream>
-#include <vector>
-#include <string>
-#include <glib.h> // For Glib basic types if needed
-#include <filesystem>
-#include <fstream>
-#include <nlohmann/json.hpp>
-#include <gtkmm/comboboxtext.h>
-#include <gtkmm/frame.h>
-#include <gtkmm/grid.h>
-#include <gtkmm/box.h>      // For Gtk::Box
-#include <gtkmm/toolbar.h>  // For Gtk::Toolbar
-#include <gtkmm/toolbutton.h> // For Gtk::ToolButton
-#include <gdkmm/pixbuf.h>   // For Gdk::Pixbuf for icons
-#include "TreeModelColumns.h" // Include the new header for ConnectionColumns
-#include "Connections.h"
-#include "Folders.h"
-#include "Ssh.h" // Include Ssh.h
-#include "Config.h" // Include the new Config.h
-#include <sys/wait.h> // For wait status macros (WIFEXITED, WEXITSTATUS, etc.)
-#include <map>
+#include "main.h"
+#include "icondata.h"
 
-using json = nlohmann::json;
-
-// Global variables
+// Global variables (definition)
 Gtk::TreeView* connections_treeview = nullptr;
-Glib::RefPtr<Gtk::TreeStore> connections_liststore; // Stays as RefPtr
-ConnectionColumns connection_columns; // Use the custom ConnectionColumns struct
+Glib::RefPtr<Gtk::TreeStore> connections_liststore;
+ConnectionColumns connection_columns;
 
 // Global UI elements for Info Panel
 Gtk::Frame* info_frame = nullptr;
@@ -53,18 +30,19 @@ Gtk::ToolButton* add_connection_menu_item_toolbar = nullptr;
 // Track open connections and their tab indices
 std::map<std::string, int> open_connections; // Maps connection ID to tab index
 
-// Define an enum for the process_connection_dialog purpose
-enum class DialogPurpose {
-    ADD,
-    EDIT,
-    DUPLICATE
-};
-
-// Define the TerminalData struct to pass to the callback
+// Define the TerminalData struct
 struct TerminalData {
     Gtk::Notebook* notebook;
     int page_num;
 };
+
+// Helper function to create a Pixbuf from embedded PNG data
+Glib::RefPtr<Gdk::Pixbuf> create_pixbuf_from_data(const unsigned char* data, unsigned int len) {
+    Glib::RefPtr<Gdk::PixbufLoader> loader = Gdk::PixbufLoader::create("png");
+    loader->write(data, len);
+    loader->close();
+    return loader->get_pixbuf();
+}
 
 // Function to handle selection changes in the TreeView
 void on_connection_selection_changed() {
@@ -959,6 +937,20 @@ void on_terminal_child_exited(GtkWidget* widget, gint status, gpointer user_data
     gtk_widget_grab_focus(widget);
 }
 
+// Create a toolbar button with embedded icon
+Gtk::ToolButton* create_toolbar_button(const char* label, const unsigned char* icon_data, unsigned int icon_len) {
+    auto pixbuf = create_pixbuf_from_data(icon_data, icon_len);
+    if (!pixbuf) {
+        std::cerr << "Failed to create pixbuf from embedded icon data" << std::endl;
+        return nullptr;
+    }
+
+    auto button = Gtk::manage(new Gtk::ToolButton(label));
+    auto image = Gtk::manage(new Gtk::Image(pixbuf));
+    button->set_icon_widget(*image);  // Pass the widget reference
+    return button;
+}
+
 int main(int argc, char* argv[]) {
     // Initialize the GTK+ application
     Gtk::Main kit(argc, argv);
@@ -1038,123 +1030,90 @@ int main(int argc, char* argv[]) {
     toolbar->set_toolbar_style(Gtk::TOOLBAR_ICONS);
     toolbar->set_icon_size(Gtk::ICON_SIZE_MENU);
 
-    // Helper lambda to create an icon (scaling is now handled by the toolbar)
-    auto create_icon = [](const std::string& icon_path) -> Gtk::Image* {
-        try {
-            Glib::RefPtr<Gdk::Pixbuf> pixbuf = Gdk::Pixbuf::create_from_file(icon_path);
-            if (pixbuf) {
-                return Gtk::manage(new Gtk::Image(pixbuf));
-            }
-        } catch (const Gdk::PixbufError& ex) {
-            std::cerr << "PixbufError for icon '" << icon_path << "': " << ex.what() << std::endl;
-        } catch (const Glib::Error& ex) {
-            std::cerr << "Error loading icon '" << icon_path << "': " << ex.what() << std::endl;
-        }
-        return Gtk::manage(new Gtk::Image());
-    };
-
     // Add Folder Button
-    Gtk::ToolButton* add_folder_button = Gtk::manage(new Gtk::ToolButton());
-    Gtk::Image* add_folder_icon = create_icon("images/addfolder.png");
-    add_folder_button->set_icon_widget(*add_folder_icon);
-    add_folder_button->set_tooltip_text("Add Folder");
-    add_folder_button->set_margin_start(1);
-    add_folder_button->set_margin_end(1);
-    add_folder_button->set_margin_top(0);
-    add_folder_button->set_margin_bottom(0);
-    add_folder_button->signal_clicked().connect(
+    add_folder_menu_item_toolbar = create_toolbar_button("Add Folder", addfolder_png, addfolder_png_len);
+    add_folder_menu_item_toolbar->set_tooltip_text("Add Folder");
+    add_folder_menu_item_toolbar->set_margin_start(1);
+    add_folder_menu_item_toolbar->set_margin_end(1);
+    add_folder_menu_item_toolbar->set_margin_top(0);
+    add_folder_menu_item_toolbar->set_margin_bottom(0);
+    add_folder_menu_item_toolbar->signal_clicked().connect(
         [window_ref = std::ref(window), &columns_ref, &connections_liststore]() {
             FolderOps::add_folder(window_ref.get(), *connections_treeview, connections_liststore, columns_ref);
         }
     );
-    toolbar->append(*add_folder_button);
+    toolbar->append(*add_folder_menu_item_toolbar);
 
     // Edit Folder Button
-    Gtk::ToolButton* edit_folder_button = Gtk::manage(new Gtk::ToolButton());
-    Gtk::Image* edit_folder_icon = create_icon("images/editfolder.png");
-    edit_folder_button->set_icon_widget(*edit_folder_icon);
-    edit_folder_button->set_tooltip_text("Edit Folder");
-    edit_folder_button->set_margin_start(1);
-    edit_folder_button->set_margin_end(1);
-    edit_folder_button->set_margin_top(0);
-    edit_folder_button->set_margin_bottom(0);
-    edit_folder_button->signal_clicked().connect(
+    edit_folder_menu_item_toolbar = create_toolbar_button("Edit Folder", editfolder_png, editfolder_png_len);
+    edit_folder_menu_item_toolbar->set_tooltip_text("Edit Folder");
+    edit_folder_menu_item_toolbar->set_margin_start(1);
+    edit_folder_menu_item_toolbar->set_margin_end(1);
+    edit_folder_menu_item_toolbar->set_margin_top(0);
+    edit_folder_menu_item_toolbar->set_margin_bottom(0);
+    edit_folder_menu_item_toolbar->signal_clicked().connect(
         [window_ref = std::ref(window), &columns_ref, &connections_liststore]() {
             FolderOps::edit_folder(window_ref.get(), *connections_treeview, connections_liststore, columns_ref);
         }
     );
-    edit_folder_menu_item_toolbar = edit_folder_button;
-    toolbar->append(*edit_folder_button);
+    toolbar->append(*edit_folder_menu_item_toolbar);
 
     // Delete Folder Button
-    Gtk::ToolButton* delete_folder_button = Gtk::manage(new Gtk::ToolButton());
-    Gtk::Image* delete_folder_icon = create_icon("images/rmfolder.png");
-    delete_folder_button->set_icon_widget(*delete_folder_icon);
-    delete_folder_button->set_tooltip_text("Delete Folder");
-    delete_folder_button->set_margin_start(1);
-    delete_folder_button->set_margin_end(1);
-    delete_folder_button->set_margin_top(0);
-    delete_folder_button->set_margin_bottom(0);
-    delete_folder_button->signal_clicked().connect(
+    delete_folder_menu_item_toolbar = create_toolbar_button("Delete Folder", rmfolder_png, rmfolder_png_len);
+    delete_folder_menu_item_toolbar->set_tooltip_text("Delete Folder");
+    delete_folder_menu_item_toolbar->set_margin_start(1);
+    delete_folder_menu_item_toolbar->set_margin_end(1);
+    delete_folder_menu_item_toolbar->set_margin_top(0);
+    delete_folder_menu_item_toolbar->set_margin_bottom(0);
+    delete_folder_menu_item_toolbar->signal_clicked().connect(
         [window_ref = std::ref(window), &columns_ref, &connections_liststore]() {
             FolderOps::delete_folder(window_ref.get(), *connections_treeview, connections_liststore, columns_ref);
         }
     );
-    delete_folder_menu_item_toolbar = delete_folder_button;
-    toolbar->append(*delete_folder_button);
+    toolbar->append(*delete_folder_menu_item_toolbar);
 
     // Add Connection Button
-    Gtk::ToolButton* add_conn_button = Gtk::manage(new Gtk::ToolButton());
-    Gtk::Image* add_conn_icon = create_icon("images/addconn.png");
-    add_conn_button->set_icon_widget(*add_conn_icon);
-    add_conn_button->set_tooltip_text("Add Connection");
-    add_conn_button->set_margin_start(1);
-    add_conn_button->set_margin_end(1);
-    add_conn_button->set_margin_top(0);
-    add_conn_button->set_margin_bottom(0);
-    add_conn_button->signal_clicked().connect(sigc::bind(sigc::ptr_fun(&add_connection_dialog), std::ref(notebook)));
-    toolbar->append(*add_conn_button);
+    add_connection_menu_item_toolbar = create_toolbar_button("Add Connection", addconn_png, addconn_png_len);
+    add_connection_menu_item_toolbar->set_tooltip_text("Add Connection");
+    add_connection_menu_item_toolbar->set_margin_start(1);
+    add_connection_menu_item_toolbar->set_margin_end(1);
+    add_connection_menu_item_toolbar->set_margin_top(0);
+    add_connection_menu_item_toolbar->set_margin_bottom(0);
+    add_connection_menu_item_toolbar->signal_clicked().connect(sigc::bind(sigc::ptr_fun(&add_connection_dialog), std::ref(notebook)));
+    toolbar->append(*add_connection_menu_item_toolbar);
 
     // Edit Connection Button
-    Gtk::ToolButton* edit_conn_button = Gtk::manage(new Gtk::ToolButton());
-    Gtk::Image* edit_conn_icon = create_icon("images/editconn.png");
-    edit_conn_button->set_icon_widget(*edit_conn_icon);
-    edit_conn_button->set_tooltip_text("Edit Connection");
-    edit_conn_button->set_margin_start(1);
-    edit_conn_button->set_margin_end(1);
-    edit_conn_button->set_margin_top(0);
-    edit_conn_button->set_margin_bottom(0);
-    edit_conn_button->signal_clicked().connect(
+    edit_connection_menu_item_toolbar = create_toolbar_button("Edit Connection", editconn_png, editconn_png_len);
+    edit_connection_menu_item_toolbar->set_tooltip_text("Edit Connection");
+    edit_connection_menu_item_toolbar->set_margin_start(1);
+    edit_connection_menu_item_toolbar->set_margin_end(1);
+    edit_connection_menu_item_toolbar->set_margin_top(0);
+    edit_connection_menu_item_toolbar->set_margin_bottom(0);
+    edit_connection_menu_item_toolbar->signal_clicked().connect(
         [&notebook]() { edit_connection_dialog(notebook); }
     );
-    edit_connection_menu_item_toolbar = edit_conn_button;
-    toolbar->append(*edit_conn_button);
+    toolbar->append(*edit_connection_menu_item_toolbar);
 
     // Duplicate Connection Button
-    Gtk::ToolButton* dupe_conn_button = Gtk::manage(new Gtk::ToolButton());
-    Gtk::Image* dupe_conn_icon = create_icon("images/dupeconn.png");
-    dupe_conn_button->set_icon_widget(*dupe_conn_icon);
-    dupe_conn_button->set_tooltip_text("Duplicate Connection");
-    dupe_conn_button->set_margin_start(1);
-    dupe_conn_button->set_margin_end(1);
-    dupe_conn_button->set_margin_top(0);
-    dupe_conn_button->set_margin_bottom(0);
-    dupe_conn_button->signal_clicked().connect(
+    duplicate_connection_menu_item_toolbar = create_toolbar_button("Duplicate Connection", dupeconn_png, dupeconn_png_len);
+    duplicate_connection_menu_item_toolbar->set_tooltip_text("Duplicate Connection");
+    duplicate_connection_menu_item_toolbar->set_margin_start(1);
+    duplicate_connection_menu_item_toolbar->set_margin_end(1);
+    duplicate_connection_menu_item_toolbar->set_margin_top(0);
+    duplicate_connection_menu_item_toolbar->set_margin_bottom(0);
+    duplicate_connection_menu_item_toolbar->signal_clicked().connect(
         [&notebook]() { duplicate_connection_dialog(notebook); }
     );
-    duplicate_connection_menu_item_toolbar = dupe_conn_button;
-    toolbar->append(*dupe_conn_button);
+    toolbar->append(*duplicate_connection_menu_item_toolbar);
 
     // Delete Connection Button
-    Gtk::ToolButton* delete_conn_button = Gtk::manage(new Gtk::ToolButton());
-    Gtk::Image* delete_conn_icon = create_icon("images/rmconn.png");
-    delete_conn_button->set_icon_widget(*delete_conn_icon);
-    delete_conn_button->set_tooltip_text("Delete Connection");
-    delete_conn_button->set_margin_start(1);
-    delete_conn_button->set_margin_end(1);
-    delete_conn_button->set_margin_top(0);
-    delete_conn_button->set_margin_bottom(0);
-    delete_conn_button->signal_clicked().connect(
+    delete_connection_menu_item_toolbar = create_toolbar_button("Delete Connection", rmconn_png, rmconn_png_len);
+    delete_connection_menu_item_toolbar->set_tooltip_text("Delete Connection");
+    delete_connection_menu_item_toolbar->set_margin_start(1);
+    delete_connection_menu_item_toolbar->set_margin_end(1);
+    delete_connection_menu_item_toolbar->set_margin_top(0);
+    delete_connection_menu_item_toolbar->set_margin_bottom(0);
+    delete_connection_menu_item_toolbar->signal_clicked().connect(
         [&notebook, &columns_ref, &connections_liststore]() {
             if (!connections_treeview) return;
             Glib::RefPtr<Gtk::TreeSelection> selection = connections_treeview->get_selection();
@@ -1171,8 +1130,7 @@ int main(int argc, char* argv[]) {
             }
         }
     );
-    delete_connection_menu_item_toolbar = delete_conn_button;
-    toolbar->append(*delete_conn_button);
+    toolbar->append(*delete_connection_menu_item_toolbar);
 
     // Pack Toolbar at the TOP of the main_vbox
     main_vbox.pack_start(*toolbar, false, false, 0);

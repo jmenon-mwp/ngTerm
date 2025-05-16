@@ -25,10 +25,27 @@ LDFLAGS = -lstdc++fs -luuid
 # Default target (builds the executable)
 all: $(TARGET)
 
+# Rule to generate icondata.h from PNG files
+# Rule to generate icondata.h from PNG files
+icondata.h: images/*.png
+	@echo "Generating icondata.h..."
+	@echo "// Generated icon data - DO NOT EDIT" > $@
+	@echo "" >> $@
+	@echo "#include <gdk/gdk.h>" >> $@
+	@echo "" >> $@
+	@for file in $^; do \
+		base=$$(basename "$${file}" .png | sed 's/^images_//') && \
+		xxd  -n $${base}_png -i "$${file}" >> $@; \
+		echo "" >> $@; \
+	done
+
+
 # Rule to build the executable from the source files
-$(TARGET): $(SOURCES)
+$(TARGET): $(SOURCES) icondata.h
 	$(CXX) $(SOURCES) -o $@ $(CXXFLAGS) $(LDFLAGS) $(GTK_LIBS)
 
-# Clean rule: removes the compiled executable and any other build artifacts
+# Clean target to remove generated files
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET) icondata.h
+
+.PHONY: clean
