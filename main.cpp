@@ -5,6 +5,8 @@
 Gtk::TreeView* connections_treeview = nullptr;
 Glib::RefPtr<Gtk::TreeStore> connections_liststore;
 ConnectionColumns connection_columns;
+Gtk::HPaned* main_hpaned = nullptr;
+Gtk::Frame* left_frame_top = nullptr;
 
 // Global UI elements for Info Panel
 Gtk::Frame* info_frame = nullptr;
@@ -733,9 +735,9 @@ void build_menu(Gtk::Window& parent_window, Gtk::MenuBar& menubar, Gtk::Notebook
 
 // Function to build the left frame
 void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::ScrolledWindow& left_scrolled_window,
-                    Gtk::TreeView& connections_treeview_ref,
-                    Glib::RefPtr<Gtk::TreeStore>& liststore_ref,
-                    ConnectionColumns& columns_ref, Gtk::Notebook& notebook) {
+    Gtk::TreeView& connections_treeview_ref,
+    Glib::RefPtr<Gtk::TreeStore>& liststore_ref,
+    ConnectionColumns& columns_ref, Gtk::Notebook& notebook) {
     // Assign global pointers
     connections_treeview = &connections_treeview_ref;
     connections_liststore = liststore_ref;
@@ -747,6 +749,10 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
     }
     left_frame.add(*vbox);
     left_scrolled_window.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+    int min_width = 250;
+    int width = std::max(Config::get()["left_frame_width"].get<int>(), min_width);
+    left_frame.set_size_request(width, -1);
+
     connections_treeview_ref.set_hexpand(true);
     connections_treeview_ref.set_vexpand(true);
     connections_treeview_ref.set_model(liststore_ref);
@@ -951,6 +957,15 @@ Gtk::ToolButton* create_toolbar_button(const char* label, const unsigned char* i
     return button;
 }
 
+void save_frame_width(Gtk::Window& window) {
+    if (main_hpaned) {
+        int frame_width = main_hpaned->get_position();
+        json new_config = Config::get();
+        new_config["left_frame_width"] = frame_width;
+        Config::update(new_config);
+    }
+}
+
 int main(int argc, char* argv[]) {
     // Initialize the GTK+ application
     Gtk::Main kit(argc, argv);
@@ -982,19 +997,19 @@ int main(int argc, char* argv[]) {
     info_grid = new Gtk::Grid();
     info_grid->set_hexpand(true);
 
-    host_value_label = new Gtk::Label("", Gtk::ALIGN_START, Gtk::ALIGN_START);
+    host_value_label = new Gtk::Label("", Gtk::ALIGN_START);
     host_value_label->set_line_wrap(true);
     host_value_label->set_line_wrap_mode(Pango::WRAP_WORD_CHAR);
     host_value_label->set_hexpand(true);
     host_value_label->set_xalign(0.0f);
 
-    type_value_label = new Gtk::Label("", Gtk::ALIGN_START, Gtk::ALIGN_START);
+    type_value_label = new Gtk::Label("", Gtk::ALIGN_START);
     type_value_label->set_line_wrap(true);
     type_value_label->set_line_wrap_mode(Pango::WRAP_WORD_CHAR);
     type_value_label->set_hexpand(true);
     type_value_label->set_xalign(0.0f);
 
-    port_value_label = new Gtk::Label("", Gtk::ALIGN_START, Gtk::ALIGN_START);
+    port_value_label = new Gtk::Label("", Gtk::ALIGN_START);
     port_value_label->set_line_wrap(true);
     port_value_label->set_line_wrap_mode(Pango::WRAP_WORD_CHAR);
     port_value_label->set_hexpand(true);
@@ -1136,19 +1151,39 @@ int main(int argc, char* argv[]) {
     main_vbox.pack_start(*toolbar, false, false, 0);
 
     // Create a horizontal paned widget
-    Gtk::HPaned main_hpaned;
-    main_vbox.pack_start(main_hpaned, true, true, 0);
+    main_hpaned = new Gtk::HPaned();
+    main_vbox.pack_start(*main_hpaned, true, true, 0);
+
+    // Set initial position from config
+    int initial_width = Config::get()["left_frame_width"].get<int>();
+    if (initial_width < 250) {
+        initial_width = 250;
+    }
+    main_hpaned->set_position(initial_width);
+
+    // Connect position changed signal using property
+    main_hpaned->property_position().signal_changed().connect(
+        [main_hpaned = std::ref(main_hpaned)]() {
+            int current_pos = main_hpaned.get()->get_position();
+            if (current_pos < 250) {
+                main_hpaned.get()->set_position(250);
+            }
+        }
+    );
 
     // Left frame for connections TreeView and Info Section
     Gtk::Box* left_side_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    left_side_box->set_size_request(250, -1); // Set minimum width
 
     // Instantiate the Frame that build_leftFrame will populate
-    Gtk::Frame left_frame_for_toolbar_and_treeview;
+    left_frame_top = new Gtk::Frame();
+    left_frame_top->set_size_request(250, -1); // Set minimum width
+
     // ScrolledWindow for TreeView - will be passed to build_leftFrame
     Gtk::ScrolledWindow connections_scrolled_window;
 
-    // Call build_leftFrame to populate left_frame_for_toolbar_and_treeview
-    build_leftFrame(window, left_frame_for_toolbar_and_treeview, connections_scrolled_window,
+    // Call build_leftFrame to populate left_frame_top
+    build_leftFrame(window, *left_frame_top, connections_scrolled_window,
                     *connections_treeview, connections_liststore, connection_columns, notebook);
 
     // Setup the Info Frame
@@ -1182,15 +1217,24 @@ int main(int argc, char* argv[]) {
     info_grid->attach(*port_value_label, 1, 2, 1, 1);
 
     // Pack both frames into the left side box
-    left_side_box->pack_start(left_frame_for_toolbar_and_treeview, Gtk::PACK_EXPAND_WIDGET);
+    left_side_box->pack_start(*left_frame_top, true, true, 0); // Set both expand and fill to true
     left_side_box->pack_start(*info_frame, false, true, 0);
 
     // Add the box containing both frames to the HPaned
-    main_hpaned.add1(*left_side_box);
+    main_hpaned->add1(*left_side_box);
 
     // Right frame for notebook (terminals)
-    main_hpaned.add2(notebook);
-    main_hpaned.set_position(250);
+    main_hpaned->add2(notebook);
+
+    // Connect position changed signal using property
+    main_hpaned->property_position().signal_changed().connect(
+        [main_hpaned = std::ref(main_hpaned)]() {
+            int current_pos = main_hpaned.get()->get_position();
+            if (current_pos < 250) {
+                main_hpaned.get()->set_position(250);
+            }
+        }
+    );
 
     // Connections TreeView setup
     connections_treeview->get_selection()->signal_changed().connect(sigc::ptr_fun(&on_connection_selection_changed)); // Use ->
@@ -1368,7 +1412,8 @@ int main(int argc, char* argv[]) {
     });
 
     // Connect the delete event
-    window.signal_delete_event().connect([](GdkEventAny*) {
+    window.signal_delete_event().connect([&window](GdkEventAny*) {
+        save_frame_width(window);
         // Explicitly close all windows
         gtk_main_quit();
         return false;  // Propagate the event

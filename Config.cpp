@@ -48,19 +48,17 @@ void Config::load_config() {
         {"window_width", 1024},
         {"window_height", 768},
         {"always_new_connection", false},
-        {"save_window_coords", true}
+        {"save_window_coords", true},
+        {"left_frame_width", 250}
     };
 
     // Load existing configuration if it exists
     if (std::filesystem::exists(config_path)) {
         try {
             std::ifstream file(config_path);
-            if (file.is_open()) {
-                file >> config;
-            }
+            file >> config;
         } catch (const std::exception& e) {
-            std::cerr << "Error reading config file: " << e.what() << std::endl;
-            // Continue with defaults if read fails
+            std::cerr << "Error loading config: " << e.what() << std::endl;
         }
     }
 }
