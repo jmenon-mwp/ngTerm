@@ -57,6 +57,14 @@ void Config::load_config() {
         try {
             std::ifstream file(config_path);
             file >> config;
+
+            // Ensure left frame width is at least 250
+            if (config.contains("left_frame_width")) {
+                int width = config["left_frame_width"].get<int>();
+                if (width < 250) {
+                    config["left_frame_width"] = 250;
+                }
+            }
         } catch (const std::exception& e) {
             std::cerr << "Error loading config: " << e.what() << std::endl;
         }
