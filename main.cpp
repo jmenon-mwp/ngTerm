@@ -1042,8 +1042,8 @@ int main(int argc, char* argv[]) {
 
     // Create Toolbar
     Gtk::Toolbar* toolbar = Gtk::manage(new Gtk::Toolbar());
-    toolbar->set_toolbar_style(Gtk::TOOLBAR_ICONS);
-    toolbar->set_icon_size(Gtk::ICON_SIZE_MENU);
+    toolbar->set_toolbar_style(Gtk::TOOLBAR_ICONS);  // Show only icons
+    toolbar->set_icon_size(Gtk::ICON_SIZE_SMALL_TOOLBAR);
 
     // Add Folder Button
     add_folder_menu_item_toolbar = create_toolbar_button("Add Folder", addfolder_png, addfolder_png_len);
@@ -1117,7 +1117,9 @@ int main(int argc, char* argv[]) {
     duplicate_connection_menu_item_toolbar->set_margin_top(0);
     duplicate_connection_menu_item_toolbar->set_margin_bottom(0);
     duplicate_connection_menu_item_toolbar->signal_clicked().connect(
-        [&notebook]() { duplicate_connection_dialog(notebook); }
+        [&notebook]() {
+            duplicate_connection_dialog(notebook);
+        }
     );
     toolbar->append(*duplicate_connection_menu_item_toolbar);
 
@@ -1177,10 +1179,13 @@ int main(int argc, char* argv[]) {
 
     // Instantiate the Frame that build_leftFrame will populate
     left_frame_top = new Gtk::Frame();
-    left_frame_top->set_size_request(250, -1); // Set minimum width
+    left_frame_top->set_vexpand(true); // Allow vertical expansion
+    left_frame_top->set_hexpand(true); // Allow horizontal expansion
 
     // ScrolledWindow for TreeView - will be passed to build_leftFrame
     Gtk::ScrolledWindow connections_scrolled_window;
+    connections_scrolled_window.set_vexpand(true); // Allow vertical expansion
+    connections_scrolled_window.set_hexpand(true); // Allow horizontal expansion
 
     // Call build_leftFrame to populate left_frame_top
     build_leftFrame(window, *left_frame_top, connections_scrolled_window,
@@ -1216,9 +1221,13 @@ int main(int argc, char* argv[]) {
     info_grid->attach(port_label, 0, 2, 1, 1);
     info_grid->attach(*port_value_label, 1, 2, 1, 1);
 
+    // Add vertical spacing between rows
+    info_grid->set_row_spacing(10); // 10 pixels between rows
+    info_grid->set_column_spacing(10); // 10 pixels between columns
+
     // Pack both frames into the left side box
     left_side_box->pack_start(*left_frame_top, true, true, 0); // Set both expand and fill to true
-    left_side_box->pack_start(*info_frame, false, true, 0);
+    left_side_box->pack_start(*info_frame, false, true, 0); // Set expand to false, fill to true
 
     // Add the box containing both frames to the HPaned
     main_hpaned->add1(*left_side_box);

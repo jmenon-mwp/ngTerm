@@ -1,2 +1,0 @@
-# Hashes of file build rules.
-2b7800f3bc77a8628bd459dcc4920dd0 icondata.h
