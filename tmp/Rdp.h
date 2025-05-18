@@ -18,12 +18,6 @@ void child_watch_cb(GPid pid, gint status, gpointer user_data);
 
 class Rdp {
     public:
-        // Signal type for process exit
-        using ProcessExitSignal = sigc::signal<void>;
-        
-        // Get the signal
-        static ProcessExitSignal& signal_process_exit();
-
         static Gtk::Socket* create_rdp_session(
             Gtk::Container& parent,
             const std::string& server,
@@ -31,20 +25,14 @@ class Rdp {
             const std::string& password,
             int width = 1024,
             int height = 768);
-
+        // Add this method
         static GPid get_pid() {
             return pid_;
-        }
-
-        static std::string get_rdp_command() {
-            return m_rdp_command;
         }
 
         // Disable copy/move
         Rdp(const Rdp&) = delete;
         Rdp& operator=(const Rdp&) = delete;
-        Rdp(Rdp&&) = delete;
-        Rdp& operator=(Rdp&&) = delete;
 
         // Friend declaration for the callback
         friend void ::child_watch_cb(GPid pid, gint status, gpointer user_data);
@@ -67,9 +55,6 @@ class Rdp {
             int width,
             int height,
             unsigned long xid);
-
-        static std::string m_rdp_command;
-        static ProcessExitSignal process_exit_signal_;
 };
 
 #endif // RDP_H

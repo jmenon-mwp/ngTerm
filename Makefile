@@ -2,7 +2,7 @@
 TARGET = ngTerm
 
 # Define the source files
-SOURCES = main.cpp Connections.cpp Folders.cpp Ssh.cpp Config.cpp
+SOURCES = main.cpp Connections.cpp Folders.cpp Ssh.cpp Config.cpp Rdp.cpp
 
 # Define the C++ compiler to use
 CXX = g++

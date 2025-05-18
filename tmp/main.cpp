@@ -1211,61 +1211,34 @@ int main(int argc, char* argv[]) {
                     // Add the socket to the box
                     rdp_box->pack_start(*rdp_socket, Gtk::PACK_EXPAND_WIDGET);
 
-                    // Add to notebook and get the page number
-                    int page_num = notebook.append_page(*rdp_box, "RDP: " + server);
-                    notebook.set_current_page(page_num);
-
-                    // Connect to the RDP process exit signal
-                    Rdp::signal_process_exit().connect([&notebook, rdp_box, page_num]() {
-                        // Use idle to ensure we're in the main thread
-                        Glib::signal_idle().connect_once([&notebook, rdp_box, page_num]() {
-                            // Find the page number again in case tabs were reordered
-                            int current_page = notebook.page_num(*rdp_box);
-                            if (current_page != -1) {
-                                notebook.remove_page(current_page);
-                            }
-                        });
-                    });
+                    // Add to notebook
+                    notebook.append_page(*rdp_box, "RDP: " + server);
+                    notebook.set_current_page(notebook.get_n_pages() - 1);
 
                     // Show all widgets
                     rdp_box->show_all();
 
                     // In the RDP session creation code, replace the signal_size_allocate connection with:
-                    // rdp_box->signal_size_allocate().connect([rdp_socket](Gtk::Allocation& allocation) {
-                    //     if (rdp_socket->get_id() != 0 && !Rdp::is_initial_connect()) {
-                    //         GPid pid = Rdp::get_pid();
-                    //         if (pid > 0) {
-                    //             Glib::signal_timeout().connect_once([rdp_socket, allocation]() {
-                    //                 std::string cmd = Rdp::get_rdp_command();
-                    //                 // Update dimensions in existing command
-                    //                 size_t w_pos = cmd.find("/w:");
-                    //                 size_t h_pos = cmd.find("/h:");
-                    //                 size_t parent_pos = cmd.find("/parent-window:");
-
-                    //                 if (w_pos != std::string::npos) {
-                    //                     size_t w_end = cmd.find(" ", w_pos);
-                    //                     cmd.replace(w_pos, w_end - w_pos,
-                    //                                "/w:" + std::to_string(allocation.get_width()));
-                    //                 }
-                    //                 if (h_pos != std::string::npos) {
-                    //                     size_t h_end = cmd.find(" ", h_pos);
-                    //                     cmd.replace(h_pos, h_end - h_pos,
-                    //                                "/h:" + std::to_string(allocation.get_height()));
-                    //                 }
-                    //                 if (parent_pos != std::string::npos) {
-                    //                     size_t parent_end = cmd.find(" ", parent_pos);
-                    //                     cmd.replace(parent_pos, parent_end - parent_pos,
-                    //                                "/parent-window:" + std::to_string(rdp_socket->get_id()));
-                    //                 }
-
-                    //                 std::cout << "RDP: Resizing: " << cmd << std::endl;
-                    //                 g_spawn_command_line_async(cmd.c_str(), nullptr);
-                    //             }, 250);
-                    //         }
-                    //     }
-                    // });
-                    // // Initial resize to match parent size
-                    // rdp_box->queue_resize();
+                    rdp_box->signal_size_allocate().connect([rdp_socket, server, user, pass](Gtk::Allocation& allocation) {
+                        if (rdp_socket->get_id() != 0) {
+                            GPid pid = Rdp::get_pid();
+                            if (pid > 0) {
+                                // Use a timer to debounce resize events (250ms delay)
+                                Glib::signal_timeout().connect_once([rdp_socket, server, user, pass, allocation]() {
+                                    // Send the resize command with proper parameters
+                                    std::string cmd = "xfreerdp /v:" + server + " /u:" + user + " /p:" + pass +
+                                                    " /w:" + std::to_string(allocation.get_width()) +
+                                                    " /h:" + std::to_string(allocation.get_height()) +
+                                                    " /parent-window:" + std::to_string(rdp_socket->get_id()) +
+                                                    " /sec:rdp +clipboard +auto-reconnect";
+                                    std::cout << "RDP: Resizing: " << cmd << std::endl;
+                                    g_spawn_command_line_async(cmd.c_str(), nullptr);
+                                }, 250); // 250ms delay
+                            }
+                        }
+                    });
+                    // Initial resize to match parent size
+                    rdp_box->queue_resize();
                 }
             }
         }
@@ -1508,35 +1481,12 @@ int main(int argc, char* argv[]) {
         // Cleanup will be handled by child-exited signal
     });
 
-    // Add resize event handler to save window dimensions and log sizes
-    window.signal_size_allocate().connect([&window, &notebook](Gtk::Allocation& allocation) {
-        // Get main window size
-        int width = allocation.get_width();
-        int height = allocation.get_height();
-
-        // Get notebook allocation
-        Gtk::Allocation notebook_alloc = notebook.get_allocation();
-
-        // Get active page (if any)
-        auto page_num = notebook.get_current_page();
-        if (page_num >= 0) {
-            auto page = notebook.get_nth_page(page_num);
-            if (page) {
-                Gtk::Allocation page_alloc = page->get_allocation();
-                // Check if this is an RDP page
-                auto rdp_box = dynamic_cast<Gtk::Box*>(page);
-                if (rdp_box) {
-                    // Get all children of the RDP box
-                    auto children = rdp_box->get_children();
-                    for (auto& child : children) {
-                        Gtk::Allocation child_alloc = child->get_allocation();
-                    }
-                }
-            }
-        }
-
-        // Save window size to config if needed
+    // Add resize event handler to save window dimensions
+    window.signal_size_allocate().connect([&window](Gtk::Allocation& allocation) {
         if (Config::get_save_window_coords()) {
+            int width = allocation.get_width();
+            int height = allocation.get_height();
+
             // Get current config and update it
             json new_config = Config::get();
             if (new_config["window_width"] != width || new_config["window_height"] != height) {

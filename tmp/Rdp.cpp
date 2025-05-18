@@ -3,27 +3,15 @@
 #include <gdk/gdkx.h>
 #include <iostream>
 #include <glibmm.h>
-#include <vector>
-#include <string>
-#include <regex>
 
-// Initialize static members
+// Initialize static member
 GPid Rdp::pid_ = 0;
-std::string Rdp::m_rdp_command;
-Rdp::ProcessExitSignal Rdp::process_exit_signal_;
-
-// Implement the signal accessor
-Rdp::ProcessExitSignal& Rdp::signal_process_exit() {
-    return process_exit_signal_;
-}
 
 // Static callback function for child process exit
 void Rdp::on_child_exit(GPid pid, gint /* status */, gpointer /* user_data */) {
-    if (pid == pid_) {
-        g_spawn_close_pid(pid_);
+    if (pid > 0) {
+        g_spawn_close_pid(pid);
         pid_ = 0;
-        // Emit signal that the process has exited
-        process_exit_signal_.emit();
     }
 }
 
@@ -129,7 +117,7 @@ std::vector<std::string> Rdp::build_rdp_command(
     int height,
     unsigned long xid)
 {
-    std::vector<std::string> argv = {
+    return {
         "/usr/bin/xfreerdp",
         "/v:" + server,
         "/u:" + username,
@@ -144,17 +132,8 @@ std::vector<std::string> Rdp::build_rdp_command(
         // "/compression",
         "/sec:rdp",
         "+clipboard",
-        "+auto-reconnect",
-        "/smart-sizing"
+        "+auto-reconnect"
         // "/gfx:rfx",
         // "/rfx"
     };
-
-    std::string command_str;
-    for (const auto& arg : argv) {
-        command_str += arg + " ";
-    }
-    m_rdp_command = command_str;
-
-    return argv;
 }
