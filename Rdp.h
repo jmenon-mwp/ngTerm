@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 #include <glib.h>
+#include <unistd.h>
+#include <sys/stat.h>
 
 // Forward declare the Rdp class
 class Rdp;
@@ -20,17 +22,25 @@ class Rdp {
     public:
         // Signal type for process exit
         using ProcessExitSignal = sigc::signal<void>;
-        
+
+        // Get the singleton instance
+        static Rdp* instance() {
+            static Rdp instance;
+            return &instance;
+        }
+
         // Get the signal
-        static ProcessExitSignal& signal_process_exit();
+        ProcessExitSignal& signal_process_exit() {
+            return process_exit_signal_;
+        }
 
         static Gtk::Socket* create_rdp_session(
             Gtk::Container& parent,
             const std::string& server,
             const std::string& username,
             const std::string& password,
-            int width = 1024,
-            int height = 768);
+            int width,
+            int height);
 
         static GPid get_pid() {
             return pid_;
@@ -51,7 +61,12 @@ class Rdp {
 
     private:
         Rdp() = default;
-        ~Rdp() = default;
+        ~Rdp() {
+            // Clean up credentials file if it exists
+            if (!m_credentials_file.empty()) {
+                unlink(m_credentials_file.c_str());
+            }
+        }
 
         // Static member to track the child process ID
         static GPid pid_;
@@ -69,6 +84,7 @@ class Rdp {
             unsigned long xid);
 
         static std::string m_rdp_command;
+        static std::string m_credentials_file;
         static ProcessExitSignal process_exit_signal_;
 };
 

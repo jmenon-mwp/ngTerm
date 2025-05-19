@@ -70,6 +70,7 @@ void duplicate_connection_dialog(Gtk::Notebook& notebook);
 void edit_connection_dialog(Gtk::Notebook& notebook);
 void add_connection_dialog(Gtk::Notebook& notebook);
 void delete_connection_dialog(Gtk::Notebook& notebook, const Glib::ustring& conn_id, const Glib::ustring& conn_name);
+void launch_rdp_session(Gtk::Notebook& notebook, const std::string& server, const std::string& username, const std::string& password, const std::string& domain = "");
 void build_menu(Gtk::Window& parent_window, Gtk::MenuBar& menubar, Gtk::Notebook& notebook, Gtk::TreeView& connections_treeview_ref,
                 Glib::RefPtr<Gtk::TreeStore>& liststore_ref, ConnectionColumns& columns_ref);
 void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::ScrolledWindow& left_scrolled_window,

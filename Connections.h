@@ -27,7 +27,8 @@ struct ConnectionInfo {
     Glib::ustring host;
     int port;
     Glib::ustring username;
-    Glib::ustring connection_type; // "SSH", "Telnet", "Serial", etc.
+    Glib::ustring domain; // Domain for RDP connections
+    Glib::ustring connection_type; // "SSH", "Telnet", "RDP", etc.
     Glib::ustring folder_id; // ID of the parent folder, or empty if top-level
     Glib::ustring auth_method;          // "Password" or "SSHKey"
     Glib::ustring password;             // SSH password (NOTE: Storing plain text is insecure)
