@@ -873,25 +873,52 @@ void build_leftFrame(Gtk::Window& parent_window, Gtk::Frame& left_frame, Gtk::Sc
     connections_treeview = &connections_treeview_ref;
     connections_liststore = liststore_ref;
 
-    Gtk::Box* vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 0));
+    // Set frame properties
+    left_frame.set_border_width(5);
+
+    // Create a vertical box for the frame's contents
+    Gtk::Box* vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    vbox->set_hexpand(true);
+    vbox->set_vexpand(true);
+
+    // Remove any existing child from the frame
     Gtk::Widget* current_child = left_frame.get_child();
     if (current_child) {
         left_frame.remove();
     }
-    left_frame.add(*vbox);
-    left_scrolled_window.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
-    int min_width = 250;
-    int width = std::max(Config::get()["left_frame_width"].get<int>(), min_width);
-    left_frame.set_size_request(width, -1);
 
+    // Configure the scrolled window
+    left_scrolled_window.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+    left_scrolled_window.set_hexpand(true);
+    left_scrolled_window.set_vexpand(true);
+    left_scrolled_window.set_min_content_width(250);
+
+    // Configure the treeview
+    connections_treeview_ref.set_model(liststore_ref);
     connections_treeview_ref.set_hexpand(true);
     connections_treeview_ref.set_vexpand(true);
-    connections_treeview_ref.set_model(liststore_ref);
+    connections_treeview_ref.set_halign(Gtk::ALIGN_FILL);
+    connections_treeview_ref.set_valign(Gtk::ALIGN_FILL);
+    connections_treeview_ref.set_headers_visible(false);
+
+    // Add the treeview to the scrolled window if not already added
+    if (!connections_treeview_ref.get_parent()) {
+        left_scrolled_window.add(connections_treeview_ref);
+    }
+
+    // Add the scrolled window to the vbox
+    vbox->pack_start(left_scrolled_window, true, true, 0);
+
+    // Add the vbox to the frame
+    left_frame.add(*vbox);
+
+    // Set up the treeview columns if not already done
     if (connections_treeview_ref.get_columns().empty()) {
         connections_treeview_ref.append_column("Connections", columns_ref.name);
     }
-    left_scrolled_window.add(connections_treeview_ref);
-    vbox->pack_start(left_scrolled_window, Gtk::PACK_EXPAND_WIDGET);
+
+    // Show all widgets
+    left_frame.show_all_children();
     vbox->show();
     left_frame.show_all();
 }
@@ -1092,7 +1119,7 @@ void save_frame_width(Gtk::Window& window) {
     if (main_hpaned) {
         int frame_width = main_hpaned->get_position();
         json new_config = Config::get();
-        new_config["left_frame_width"] = frame_width;
+        new_config["left_frame_width"] = ((frame_width -15) < 250) ? 250 : (frame_width - 14);
         Config::update(new_config);
     }
 }
@@ -1291,42 +1318,61 @@ int main(int argc, char* argv[]) {
 
     // Create a horizontal paned widget
     main_hpaned = new Gtk::HPaned();
+
+    // Pack the paned widget into the main vbox
     main_vbox.pack_start(*main_hpaned, true, true, 0);
+
+    // Calculate total width needed for 250px content + margins + borders
+    const int content_width = 250;  // Desired content width
+    const int frame_margin = 10;    // 5px margin on each side
+    const int border_width = 2;     // 1px border on each side
+    const int total_min_width = content_width + frame_margin + border_width * 2;
 
     // Set initial position from config
     int initial_width = Config::get()["left_frame_width"].get<int>();
-    if (initial_width < 250) {
-        initial_width = 250;
-    }
-    main_hpaned->set_position(initial_width);
+    main_hpaned->set_position(initial_width + frame_margin + border_width * 2);
 
     // Connect position changed signal using property
     main_hpaned->property_position().signal_changed().connect(
-        [main_hpaned = std::ref(main_hpaned)]() {
+        [main_hpaned = std::ref(main_hpaned), total_min_width, content_width]() {
             int current_pos = main_hpaned.get()->get_position();
-            if (current_pos < 250) {
-                main_hpaned.get()->set_position(250);
+            if (current_pos < total_min_width) {
+                main_hpaned.get()->set_position(total_min_width);
             }
         }
     );
 
     // Left frame for connections TreeView and Info Section
     Gtk::Box* left_side_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    left_side_box->set_size_request(250, -1); // Set minimum width
+    left_side_box->set_hexpand(false);  // Don't expand horizontally beyond minimum
+    left_side_box->set_halign(Gtk::ALIGN_FILL);
+    left_side_box->set_valign(Gtk::ALIGN_FILL);
+    left_side_box->set_size_request(250, -1);  // Set minimum width
+    left_side_box->set_margin_start(0);
+    left_side_box->set_margin_end(0);
+    left_side_box->set_margin_top(0);
+    left_side_box->set_margin_bottom(0);
+    left_side_box->property_width_request() = 250;  // Explicitly set width request
 
     // Instantiate the Frame that build_leftFrame will populate
-    left_frame_top = new Gtk::Frame();
-    left_frame_top->set_vexpand(true); // Allow vertical expansion
-    left_frame_top->set_hexpand(true); // Allow horizontal expansion
+    left_frame_top = Gtk::manage(new Gtk::Frame());
+    left_frame_top->set_shadow_type(Gtk::SHADOW_ETCHED_IN);
+    left_frame_top->set_vexpand(true);  // Allow vertical expansion
+    left_frame_top->set_hexpand(false);  // Don't expand horizontally
+    left_frame_top->set_halign(Gtk::ALIGN_FILL);
+    left_frame_top->set_valign(Gtk::ALIGN_FILL);
+    left_frame_top->set_size_request(250, -1);  // Set minimum width
 
     // ScrolledWindow for TreeView - will be passed to build_leftFrame
-    Gtk::ScrolledWindow connections_scrolled_window;
-    connections_scrolled_window.set_vexpand(true); // Allow vertical expansion
-    connections_scrolled_window.set_hexpand(true); // Allow horizontal expansion
+    Gtk::ScrolledWindow* connections_scrolled_window = Gtk::manage(new Gtk::ScrolledWindow());
+    connections_scrolled_window->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+    connections_scrolled_window->set_vexpand(true);
+    connections_scrolled_window->set_hexpand(true);
+    connections_scrolled_window->set_min_content_width(250);  // Minimum width for content
 
     // Call build_leftFrame to populate left_frame_top
-    build_leftFrame(window, *left_frame_top, connections_scrolled_window,
-                    *connections_treeview, connections_liststore, connection_columns, notebook);
+    build_leftFrame(window, *left_frame_top, *connections_scrolled_window,
+                   *connections_treeview, connections_liststore, connection_columns, notebook);
 
     // Setup the Info Frame
     Gtk::Label* frame_title_label = Gtk::manage(new Gtk::Label("", Gtk::ALIGN_START));
@@ -1371,16 +1417,6 @@ int main(int argc, char* argv[]) {
 
     // Right frame for notebook (terminals)
     main_hpaned->add2(notebook);
-
-    // Connect position changed signal using property
-    main_hpaned->property_position().signal_changed().connect(
-        [main_hpaned = std::ref(main_hpaned)]() {
-            int current_pos = main_hpaned.get()->get_position();
-            if (current_pos < 250) {
-                main_hpaned.get()->set_position(250);
-            }
-        }
-    );
 
     // Connections TreeView setup
     connections_treeview->get_selection()->signal_changed().connect(sigc::ptr_fun(&on_connection_selection_changed)); // Use ->
