@@ -78,6 +78,10 @@ bool ConnectionManager::save_connection(const ConnectionInfo& connection) {
                 }
                 json_conn["additional_ssh_options"] = connection.additional_ssh_options.raw();
             }
+            if (connection.connection_type == "RDP") {
+                json_conn["domain"] = connection.domain.raw();
+                json_conn["password"] = connection.password.raw();
+            }
             json_array.push_back(json_conn);
             found = true;
         } else {
@@ -101,6 +105,10 @@ bool ConnectionManager::save_connection(const ConnectionInfo& connection) {
                     json_conn["ssh_key_passphrase"] = conn.ssh_key_passphrase.raw();
                 }
                 json_conn["additional_ssh_options"] = conn.additional_ssh_options.raw();
+            }
+            if (conn.connection_type == "RDP") {
+                json_conn["domain"] = conn.domain.raw();
+                json_conn["password"] = conn.password.raw();
             }
             json_array.push_back(json_conn);
         }
@@ -128,6 +136,10 @@ bool ConnectionManager::save_connection(const ConnectionInfo& connection) {
                 json_conn["ssh_key_passphrase"] = connection.ssh_key_passphrase.raw();
             }
             json_conn["additional_ssh_options"] = connection.additional_ssh_options.raw();
+        }
+        if (connection.connection_type == "RDP") {
+            json_conn["domain"] = connection.domain.raw();
+            json_conn["password"] = connection.password.raw();
         }
         json_array.push_back(json_conn);
     }
@@ -211,6 +223,10 @@ std::vector<ConnectionInfo> ConnectionManager::load_connections() {
                         conn.ssh_key_path = Glib::ustring(j_conn.value("ssh_key_path", ""));
                         conn.ssh_key_passphrase = Glib::ustring(j_conn.value("ssh_key_passphrase", ""));
                         conn.additional_ssh_options = Glib::ustring(j_conn.value("additional_ssh_options", ""));
+                    }
+                    if (conn.connection_type == "RDP") {
+                        conn.domain = Glib::ustring(j_conn.value("domain", ""));
+                        conn.password = Glib::ustring(j_conn.value("password", ""));
                     }
                     connections.push_back(conn);
                 }

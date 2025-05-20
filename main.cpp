@@ -189,7 +189,8 @@ void process_connection_dialog(Gtk::Notebook& notebook, DialogPurpose purpose, c
     }
 
     Gtk::Dialog dialog(dialog_title, true);
-    dialog.set_default_size(450, 0);
+    dialog.set_default_size(450, -1); // -1 means size will be determined by content
+    dialog.set_resizable(false); // Prevent manual resizing but still allows automatic resizing
 
     Gtk::Grid* grid = Gtk::manage(new Gtk::Grid());
     grid->set_hexpand(true);
@@ -685,23 +686,37 @@ void add_connection_dialog(Gtk::Notebook& notebook) {
 
 // Function to launch an RDP session
 void launch_rdp_session(Gtk::Notebook& notebook, const std::string& server, const std::string& username, const std::string& password, const std::string& domain) {
-    // Default dimensions
-    int width = 1024;
-    int height = 768;
+    // Get the notebook's allocation for dimensions
+    auto allocation = notebook.get_allocation();
+    int width = allocation.get_width();
+    int height = allocation.get_height();
+
+    std::cout << "Launching RDP session with dimensions: " << width << "x" << height << std::endl;
+
+    // Ensure minimum dimensions
+    if (width < 800) width = 1024;
+    if (height < 600) height = 768;
+
     // Create a new tab for the RDP session
     Gtk::Box* rdp_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
-    Gtk::Label* label = Gtk::manage(new Gtk::Label("RDP: " + server));
-    rdp_box->pack_start(*label, Gtk::PACK_SHRINK);
 
     // Create the RDP session with domain if provided
     Gtk::Socket* rdp_socket = nullptr;
-    if (domain.empty()) {
-        rdp_socket = Rdp::create_rdp_session(*rdp_box, server, username, password, width, height);
-    } else {
+    std::string effective_username = username;
+
+    if (!domain.empty()) {
         // Format username as DOMAIN\username for RDP
-        std::string full_username = domain + "\\" + username;
-        rdp_socket = Rdp::create_rdp_session(*rdp_box, server, full_username, password, width, height);
+        effective_username = domain + "\\" + username;
     }
+
+    std::cout << "Creating RDP session for " << effective_username << "@" << server << std::endl;
+    if (password.empty()) {
+        std::cerr << "WARNING: No password provided for RDP connection" << std::endl;
+    } else {
+        std::cout << "Password provided (length: " << password.length() << ")" << std::endl;
+    }
+
+    rdp_socket = Rdp::create_rdp_session(*rdp_box, server, effective_username, password, width, height);
 
     if (rdp_socket) {
         // Add the socket to the box

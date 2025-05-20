@@ -52,21 +52,17 @@ Gtk::Socket* Rdp::create_rdp_session(
     socket->set_visible(true);
 
     // Connect to the realize signal
-    // Create local copies of the parameters that will be captured by value
     auto* socket_ptr = socket;
-    auto server_copy = server;
-    auto username_copy = username;
-    auto password_copy = password;
     auto* parent_ptr = &parent;
 
     // Connect to the realize signal to ensure the window is fully realized
     socket->signal_realize().connect([=]() {
         // Execute the RDP session creation in an idle callback
-        Glib::signal_idle().connect_once([=]() mutable {  // Add mutable to allow modifying captured variables
+        Glib::signal_idle().connect_once([=]() mutable {
             // Create local variables for dimensions
             int actual_width = width;
             int actual_height = height;
-            auto* self = Rdp::instance();  // Get the singleton instance
+            auto* self = Rdp::instance();
             try {
                 // Get the X11 window ID
                 Window xid = socket_ptr->get_id();
@@ -74,79 +70,77 @@ Gtk::Socket* Rdp::create_rdp_session(
 
                 if (xid == 0) {
                     std::cerr << "RDP: Invalid X Window ID" << std::endl;
-                    return; // Exit the idle callback
+                    return;
                 }
 
-                    // Get size from parent if available
-                    if (Gtk::Widget* parent_widget = dynamic_cast<Gtk::Widget*>(parent_ptr)) {
-                        // Get dimensions directly
-                        actual_width = parent_widget->get_allocated_width();
-                        actual_height = parent_widget->get_allocated_height();
+                // Log initial dimensions
+                std::cout << "RDP: Initial dimensions - width: " << width << ", height: " << height << std::endl;
 
-                        // Ensure minimum dimensions
-                        if (actual_width <= 0) actual_width = width;
-                        if (actual_height <= 0) actual_height = height;
-                    }
-
-                    // Build the xfreerdp command with all options using actual dimensions
-                    std::vector<std::string> args = {
-                        "/usr/bin/xfreerdp",
-                        "/v:" + server_copy,
-                        "/u:" + username_copy,
-                        "/p:" + password_copy,  // Password is passed directly in the command line
-                        "/cert-ignore",   // Ignore certificate warnings
-                        "/sec:rdp",       // Use TLS security
-                        "/gdi:hw",        // Hardware graphics
-                        "/smart-sizing",
-                        "/size:" + std::to_string(actual_width) + "x" + std::to_string(actual_height),
-                        "/window-drag",
-                        "/sound:sys:alsa",
-                        "/microphone:sys:alsa",
-                        "/network:auto",
-                        "/compression",
-                        "/gfx:RFX",
-                        "/rfx",
-                        "/jpeg"
-                    };
-
-                    // Convert to char** for g_spawn_async
-                    std::vector<const char*> argv_ptrs;
-                    for (const auto& arg : args) {
-                        argv_ptrs.push_back(arg.c_str());
-                    }
-                    argv_ptrs.push_back(nullptr);
-
-                    // Spawn the process
-                    GPid pid;
-                    GError* error = nullptr;
-                    gboolean success = g_spawn_async(
-                        nullptr, // working directory
-                        const_cast<gchar**>(argv_ptrs.data()),
-                        nullptr, // environment
-                        static_cast<GSpawnFlags>(G_SPAWN_DO_NOT_REAP_CHILD),
-                        nullptr, // child setup function
-                        nullptr, // user data for setup
-                        &pid,
-                        &error
-                    );
-
-                    if (!success) {
-                        std::cerr << "RDP: Failed to spawn process: " << error->message << std::endl;
-                        g_error_free(error);
-                        return;
-                    }
-
-                    self->pid_ = pid;
-                    g_child_watch_add(pid, child_watch_cb, nullptr);
-                    std::cout << "RDP: Started process with PID: " << pid << std::endl;
-                } catch (const std::exception& e) {
-                    std::cerr << "RDP: Error in RDP session creation: " << e.what() << std::endl;
+                // Ensure minimum dimensions (at least 800x600)
+                if (actual_width < 800) {
+                    std::cout << "RDP: Width too small (" << actual_width << "), using 1024" << std::endl;
+                    actual_width = 1024;
                 }
-            });
+                if (actual_height < 600) {
+                    std::cout << "RDP: Height too small (" << actual_height << "), using 768" << std::endl;
+                    actual_height = 768;
+                }
+
+                std::cout << "RDP: Final dimensions - width: " << actual_width
+                        << ", height: " << actual_height << std::endl;
+                std::cout << "RDP: Connecting to " << server << " as " << username << std::endl;
+                if (password.empty()) {
+                    std::cerr << "RDP WARNING: Empty password provided!" << std::endl;
+                }
+
+                // Build the xfreerdp command using the build_rdp_command function
+                std::vector<std::string> args = build_rdp_command(
+                    server,
+                    username,
+                    password,
+                    actual_width,
+                    actual_height,
+                    xid
+                );
+
+                // Convert to char** for g_spawn_async
+                std::vector<const char*> argv_ptrs;
+                for (const auto& arg : args) {
+                    argv_ptrs.push_back(arg.c_str());
+                }
+                argv_ptrs.push_back(nullptr);
+
+                // Spawn the process
+                GPid pid;
+                GError* error = nullptr;
+                gboolean success = g_spawn_async(
+                    nullptr, // working directory
+                    const_cast<gchar**>(argv_ptrs.data()),
+                    nullptr, // environment
+                    static_cast<GSpawnFlags>(G_SPAWN_DO_NOT_REAP_CHILD),
+                    nullptr, // child setup function
+                    nullptr, // user data for setup
+                    &pid,
+                    &error
+                );
+
+                if (!success) {
+                    std::cerr << "RDP: Failed to spawn process: " << error->message << std::endl;
+                    g_error_free(error);
+                    return;
+                }
+
+                self->pid_ = pid;
+                g_child_watch_add(pid, child_watch_cb, nullptr);
+                std::cout << "RDP: Started process with PID: " << pid << std::endl;
+            } catch (const std::exception& e) {
+                std::cerr << "RDP: Error in RDP session creation: " << e.what() << std::endl;
+            }
         });
+    });
 
-        return socket;
-    }
+    return socket;
+}
 
 std::vector<std::string> Rdp::build_rdp_command(
     const std::string& server,
@@ -156,60 +150,43 @@ std::vector<std::string> Rdp::build_rdp_command(
     int height,
     unsigned long xid)
 {
-        // Create a temporary file for credentials
-    std::string temp_filename = "/tmp/ngterm_rdp_XXXXXX";
-    std::vector<char> temp_filename_vec(temp_filename.begin(), temp_filename.end());
-    temp_filename_vec.push_back('\0');  // Null-terminate for mkstemp
+    // Build the command with basic settings
+    std::vector<std::string> argv = {
+        "/usr/bin/xfreerdp",
+        "/v:" + server,
+        "/u:" + username,
+        "/w:" + std::to_string(width),
+        "/h:" + std::to_string(height),
+        "/parent-window:" + std::to_string(xid),
+        "/smart-sizing",
+        "/sec:rdp",
+        "+clipboard",
+        "+auto-reconnect",
+        "/cert-ignore",
+        "/bpp:16",   // Use 16-bit color depth
+        "/rfx",      // Enable RDP 8.0 RemoteFX codec
+        "/gdi:sw",   // Use software rendering for stability
+        "/network:auto"  // Auto-detect network conditions
+    };
 
-    int fd = mkstemp(temp_filename_vec.data());
-    if (fd == -1) {
-        std::cerr << "RDP: Failed to create temporary credentials file" << std::endl;
-        return {};
+    // Add password if provided (use /p: instead of /p: to avoid showing in logs)
+    if (!password.empty()) {
+        argv.push_back("/p:" + password);
+    } else {
+        // If no password, allow it to be entered interactively
+        argv.push_back("/p:");
     }
 
-    // Get the actual filename
-    temp_filename = temp_filename_vec.data();
-
-    try {
-        // Write credentials to the temporary file
-        std::string credentials = "username:" + username + "\npassword:" + password + "\n";
-        if (write(fd, credentials.c_str(), credentials.length()) == -1) {
-            throw std::runtime_error("Failed to write credentials");
+    // Log the command (without password for security)
+    std::cout << "RDP Command: ";
+    for (const auto& arg : argv) {
+        if (arg.find("/p:") == 0) {
+            std::cout << "[PASSWORD_PROVIDED] ";
+        } else {
+            std::cout << arg << " ";
         }
-
-        // Set restrictive permissions on the credentials file
-        if (fchmod(fd, S_IRUSR | S_IWUSR) == -1) {
-            throw std::runtime_error("Failed to set file permissions");
-        }
-
-        close(fd);
-
-        // Build the command with credentials file
-        std::vector<std::string> argv = {
-            "/usr/bin/xfreerdp",
-            "/v:" + server,
-            "/u:" + username,
-            "/p:",  // Empty password as we're using credentials file
-            "/w:" + std::to_string(width),
-            "/h:" + std::to_string(height),
-            "/parent-window:" + std::to_string(xid),
-            "/sec:rdp",
-            "+clipboard",
-            "+auto-reconnect",
-            "/smart-sizing",
-            "/cert-ignore",
-            "/from-stdin"  // Read credentials from stdin
-        };
-
-        // Store the credentials file path for cleanup
-        m_credentials_file = temp_filename;
-
-        return argv;
-
-    } catch (const std::exception& e) {
-        close(fd);
-        unlink(temp_filename.c_str());
-        std::cerr << "RDP Error: " << e.what() << std::endl;
-        return {};
     }
+    std::cout << std::endl;
+
+    return argv;
 }
