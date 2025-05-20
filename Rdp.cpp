@@ -53,7 +53,6 @@ Gtk::Socket* Rdp::create_rdp_session(
 
     // Connect to the realize signal
     auto* socket_ptr = socket;
-    auto* parent_ptr = &parent;
 
     // Connect to the realize signal to ensure the window is fully realized
     socket->signal_realize().connect([=]() {
@@ -158,14 +157,13 @@ std::vector<std::string> Rdp::build_rdp_command(
         "/w:" + std::to_string(width),
         "/h:" + std::to_string(height),
         "/parent-window:" + std::to_string(xid),
-        "/smart-sizing",
+        "/dynamic-resolution",
         "/sec:rdp",
         "+clipboard",
         "+auto-reconnect",
         "/cert-ignore",
         "/bpp:16",   // Use 16-bit color depth
         "/rfx",      // Enable RDP 8.0 RemoteFX codec
-        "/gdi:sw",   // Use software rendering for stability
         "/network:auto"  // Auto-detect network conditions
     };
 
