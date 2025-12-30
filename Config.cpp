@@ -56,7 +56,9 @@ void Config::load_config() {
     if (std::filesystem::exists(config_path)) {
         try {
             std::ifstream file(config_path);
-            file >> config;
+            json loaded_config;
+            file >> loaded_config;
+            config.update(loaded_config);
 
             // Ensure left frame width is at least 250
             if (config.contains("left_frame_width")) {

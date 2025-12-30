@@ -1329,7 +1329,7 @@ int main(int argc, char* argv[]) {
     const int total_min_width = content_width + frame_margin + border_width * 2;
 
     // Set initial position from config
-    int initial_width = Config::get()["left_frame_width"].get<int>();
+    int initial_width = Config::get().value("left_frame_width", 250);
     main_hpaned->set_position(initial_width + frame_margin + border_width * 2);
 
     // Connect position changed signal using property
